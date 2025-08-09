@@ -1,3 +1,4 @@
+// Package wm provides a X11 window manager.
 package wm
 
 import (
@@ -23,11 +24,10 @@ import (
 	"github.com/mattn/go-shellwords"
 )
 
+// XUtil represents the state of xgbutil.
 var XUtil *xgbutil.XUtil
 
-// config
-var k = koanf.New(".")
-
+// Config represents the application configuration.
 type Config struct {
 	// tiling window gaps, unfocused/focused window border colors, mod key for all wm actions, window border width,
 	// keybinds
@@ -44,8 +44,9 @@ type Config struct {
 	AutoFullscreen bool             `koanf:"auto-fullscreen"`
 }
 
+// Keybind represents a keybind: keycode, the letter of the key, if shift should be pressed,
+// command (can be empty), role in wm (can be empty)k.
 type Keybind struct {
-	// keycode, the letter of the key, if shift should be pressed, command (can be empty), role in wm (can be empty)
 	Keycode uint32
 	Key     string `koanf:"key"`
 	Shift   bool   `koanf:"shift"`
@@ -53,7 +54,7 @@ type Keybind struct {
 	Role    string `koanf:"role"`
 }
 
-// where a window is on a layout (dynamic by using percentages)
+// LayoutWindow represensts where a window is on a layout (dynamic by using percentages).
 type LayoutWindow struct {
 	WidthPercentage  float64 `koanf:"width"`
 	HeightPercentage float64 `koanf:"height"`
@@ -61,20 +62,22 @@ type LayoutWindow struct {
 	YPercentage      float64 `koanf:"y"`
 }
 
-// a tiling layout of windows
+// Layout represensts a tiling layout of windows.
 type Layout struct {
 	Windows []LayoutWindow `koanf:"windows"`
 }
 
+// RLayoutWindow represents a resized layout window.
 type RLayoutWindow struct {
 	Width, Height, X, Y uint16
 }
 
+// ResizeLayout represents a resized layout.
 type ResizeLayout struct {
 	Windows []RLayoutWindow
 }
 
-// basic window struct
+// Window represents a basic window struct.
 type Window struct {
 	id            xproto.Window
 	X, Y          int
@@ -83,14 +86,14 @@ type Window struct {
 	Client        xproto.Window
 }
 
-// an area on the screen
+// Space represents an area on the screen.
 type Space struct {
 	X, Y          int
 	Width, Height int
 }
 
-// a map from client windows to the frame, the reverse of that, window IDs to windows, and if that workspace is tiling
-// or not (incase it needs to update to sync with the main wm)
+// Workspace is a map from client windows to the frame, the reverse of that, window IDs to windows, and if that
+// workspace is tiling or not (incase it needs to update to sync with the main wm).
 type Workspace struct {
 	tiling        bool
 	layoutIndex   int
@@ -100,9 +103,9 @@ type Workspace struct {
 	resizedLayout ResizeLayout
 }
 
-// the connection, root window, width and height of screen, workspaces, the current workspace index, the current
-// workspace, atoms for EMWH, if the wm is tiling, the space for tiling windows to be, the different tiling layouts, the
-// wm condig, the mod key
+// WindowManager represents the connection, root window, width and height of screen, workspaces,
+// the current workspace index,the current workspace, atoms for EMWH, if the wm is tiling, the space for tiling
+// windows to be, the different tiling layouts, the wm condig, the mod key.
 type WindowManager struct {
 	conn           *xgb.Conn
 	root           xproto.Window
@@ -239,8 +242,10 @@ func createLayouts() map[int][]Layout {
 	}
 }
 
-// read and create config, if certain values, aren't provided, use the defualt values
+// read and create config, if certain values, aren't provided, use the default values.
 func createConfig(f koanf.Provider) Config {
+	k := koanf.New(".")
+
 	// Set defaults manually
 	cfg := Config{
 		Gap:            6,
@@ -271,7 +276,7 @@ func createConfig(f koanf.Provider) Config {
 	return cfg
 }
 
-// create the X connection and get the root window, create workspaces and create window manager struct
+// Create creates the X connection and get the root window, create workspaces and create window manager struct.
 func Create() (*WindowManager, error) {
 	// establish connection
 	X, err := xgb.NewConn()
@@ -386,7 +391,7 @@ func getKeycodeForKeysym(conn *xgb.Conn, keysym uint32) xproto.Keycode {
 	return 0
 }
 
-// gets keycode of key and sets it, then tells the X server to notify us when this keybind is pressed
+// gets keycode of key and sets it, then tells the X server to notify us when this keybind is pressed.
 func (wm *WindowManager) createKeybind(kb *Keybind) Keybind {
 	code := keybind.StrToKeycodes(XUtil, kb.Key)
 	if len(code) < 1 {
@@ -547,6 +552,7 @@ func (wm *WindowManager) pointerToWindow(window xproto.Window) error {
 		Check()
 }
 
+// Run runs the window manager.
 func (wm *WindowManager) Run() {
 	fmt.Println("window manager up and running")
 
@@ -1167,7 +1173,7 @@ func (wm *WindowManager) Run() {
 							// workspace that has been changed to
 							w := ev.Child
 							var window Window
-							var shiftok = false
+							shiftok := false
 							if kb.Shift {
 								if _, ok := wm.windows[w]; ok {
 									shiftok = ok
@@ -1284,7 +1290,7 @@ func (wm *WindowManager) resizeTiledX(increase bool, ev xproto.KeyPressEvent) bo
 	}
 
 	var resizeLayout ResizeLayout
-	var ok = true
+	ok := true
 	for _, win := range wm.currWorkspace.windowList {
 		geomwin, err := xproto.GetGeometry(wm.conn, xproto.Drawable(win.id)).Reply()
 		if err != nil {
@@ -2617,6 +2623,7 @@ func createChanges(event xproto.ConfigureRequestEvent) []uint32 {
 	return changes
 }
 
+// Close closes the window manager.
 func (wm *WindowManager) Close() {
 	// close the connection
 	if wm.conn != nil {
