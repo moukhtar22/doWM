@@ -899,7 +899,7 @@ func (wm *WindowManager) Run() {
 						}
 						switch kb.Role {
 						case "resize-x-scale-up":
-							if wm.currWorkspace.tiling == true {
+							if wm.currWorkspace.tiling {
 								if err := wm.pointerToWindow(ev.Child); err != nil {
 									slog.Error("couldn't move pointer to window", "error:", err)
 								}
@@ -918,7 +918,7 @@ func (wm *WindowManager) Run() {
 								}
 							}
 						case "resize-x-scale-down":
-							if wm.currWorkspace.tiling == true {
+							if wm.currWorkspace.tiling {
 								if err := wm.pointerToWindow(ev.Child); err != nil {
 									slog.Error("couldn't move pointer to window", "error:", err)
 								}
@@ -939,7 +939,7 @@ func (wm *WindowManager) Run() {
 								}
 							}
 						case "resize-y-scale-up":
-							if wm.currWorkspace.tiling == true {
+							if wm.currWorkspace.tiling {
 								if err := wm.pointerToWindow(ev.Child); err != nil {
 									slog.Error("couldn't move pointer to window", "error:", err)
 								}
@@ -958,7 +958,7 @@ func (wm *WindowManager) Run() {
 								}
 							}
 						case "resize-y-scale-down":
-							if wm.currWorkspace.tiling == true {
+							if wm.currWorkspace.tiling {
 								if err := wm.pointerToWindow(ev.Child); err != nil {
 									slog.Error("couldn't move pointer to window", "error:", err)
 								}
@@ -966,7 +966,7 @@ func (wm *WindowManager) Run() {
 									break
 								}
 							} else {
-								if wm.currWorkspace.tiling == true {
+								if wm.currWorkspace.tiling {
 									break
 								}
 								geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
@@ -982,7 +982,7 @@ func (wm *WindowManager) Run() {
 								}
 							}
 						case "move-x-right":
-							if wm.currWorkspace.tiling == true {
+							if wm.currWorkspace.tiling {
 								break
 							}
 							geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
@@ -994,7 +994,7 @@ func (wm *WindowManager) Run() {
 								slog.Error("couldn't move pointer to window", "error:", err)
 							}
 						case "move-x-left":
-							if wm.currWorkspace.tiling == true {
+							if wm.currWorkspace.tiling {
 								break
 							}
 							geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
@@ -1006,7 +1006,7 @@ func (wm *WindowManager) Run() {
 								slog.Error("couldn't move pointer to window", "error:", err)
 							}
 						case "move-y-up":
-							if wm.currWorkspace.tiling == true {
+							if wm.currWorkspace.tiling {
 								break
 							}
 							geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
@@ -1018,7 +1018,7 @@ func (wm *WindowManager) Run() {
 								slog.Error("couldn't move pointer to window", "error:", err)
 							}
 						case "move-y-down":
-							if wm.currWorkspace.tiling == true {
+							if wm.currWorkspace.tiling {
 								break
 							}
 							geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
@@ -1180,7 +1180,7 @@ func (wm *WindowManager) Run() {
 							// workspace that has been changed to
 							w := ev.Child
 							var window Window
-							var shiftok bool = false
+							var shiftok = false
 							if kb.Shift {
 								if _, ok := wm.windows[w]; ok {
 									shiftok = ok
@@ -1300,7 +1300,7 @@ func (wm *WindowManager) resizeTiledX(increase bool, ev xproto.KeyPressEvent) bo
 	}
 
 	var resizeLayout ResizeLayout
-	var ok bool = true
+	var ok = true
 	for _, win := range wm.currWorkspace.windowList {
 		geomwin, err := xproto.GetGeometry(wm.conn, xproto.Drawable(win.id)).Reply()
 		if err != nil {
@@ -1363,7 +1363,7 @@ func (wm *WindowManager) resizeTiledY(increase bool, ev xproto.KeyPressEvent) bo
 	}
 
 	var resizeLayout ResizeLayout
-	var ok bool = true
+	var ok = true
 	for _, win := range wm.currWorkspace.windowList {
 		geomwin, err := xproto.GetGeometry(wm.conn, xproto.Drawable(win.id)).Reply()
 		if err != nil {
@@ -2177,7 +2177,7 @@ func (wm *WindowManager) OnUnmapNotify(event xproto.UnmapNotifyEvent) {
 		return
 	}
 
-	var found bool = false
+	var found = false
 	for _, win := range wm.currWorkspace.windowList {
 		if win.id == event.Window {
 			found = true
@@ -2204,7 +2204,7 @@ func (wm *WindowManager) OnUnmapNotify(event xproto.UnmapNotifyEvent) {
 }
 
 func (wm *WindowManager) remDestroyedWin(Window xproto.Window) {
-	var found bool = false
+	var found = false
 	for _, win := range wm.currWorkspace.windowList {
 		if win.id == Window {
 			found = true
