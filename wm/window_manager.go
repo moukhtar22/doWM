@@ -118,7 +118,7 @@ type WindowManager struct {
 	layoutIndex    int
 }
 
-func (wm *WindowManager) cursor() {
+func (wm *WindowManager) cursor() { //nolint:unused
 	// Load the default cursor ("left_ptr") from the theme
 	cursorFont, err := xproto.NewFontId(wm.conn)
 	if err != nil {
