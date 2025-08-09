@@ -600,7 +600,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 	root, TopLevelWindows := tree.Root, tree.Children
 
 	if root != wm.root {
-		slog.Error("tree root not equal to window manager root", "error:", err.Error())
+		slog.Error("tree root not equal to window manager root")
 		return
 	}
 
