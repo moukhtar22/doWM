@@ -845,10 +845,10 @@ func (wm *WindowManager) Run() {
 		case xproto.CreateNotifyEvent:
 			fmt.Println("create notify")
 		case xproto.ConfigureRequestEvent:
-			wm.onConfigureRequest(event.(xproto.ConfigureRequestEvent))
+			wm.onConfigureRequest(ev)
 		case xproto.MapRequestEvent:
 			fmt.Println("MapRequest")
-			wm.onMapRequest(event.(xproto.MapRequestEvent))
+			wm.onMapRequest(ev)
 		case xproto.ReparentNotifyEvent:
 			fmt.Println("reparent notify")
 		case xproto.MapNotifyEvent:
@@ -857,7 +857,7 @@ func (wm *WindowManager) Run() {
 			fmt.Println("ConfigureNotify")
 		case xproto.UnmapNotifyEvent:
 			fmt.Println("unmapping")
-			wm.onUnmapNotify(event.(xproto.UnmapNotifyEvent))
+			wm.onUnmapNotify(ev)
 		case xproto.DestroyNotifyEvent:
 			fmt.Println("DestroyNotify")
 			fmt.Println("Window:")
@@ -873,12 +873,12 @@ func (wm *WindowManager) Run() {
 			// when we enter the frame, change the border color
 			fmt.Println("EnterNotify")
 			fmt.Println(ev.Event)
-			wm.onEnterNotify(event.(xproto.EnterNotifyEvent))
+			wm.onEnterNotify(ev)
 		case xproto.LeaveNotifyEvent:
 			// when we leave the frame, change the border color
 			fmt.Println("LeaveNotify")
 			fmt.Println(ev.Event)
-			wm.onLeaveNotify(event.(xproto.LeaveNotifyEvent))
+			wm.onLeaveNotify(ev)
 		case xproto.KeyPressEvent:
 			fmt.Println("keyPress")
 			// if mod key is down
