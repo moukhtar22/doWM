@@ -838,27 +838,20 @@ func (wm *WindowManager) Run() {
 			}
 		case xproto.CreateNotifyEvent:
 			fmt.Println("create notify")
-			break
 		case xproto.ConfigureRequestEvent:
 			wm.OnConfigureRequest(event.(xproto.ConfigureRequestEvent))
-			break
 		case xproto.MapRequestEvent:
 			fmt.Println("MapRequest")
 			wm.OnMapRequest(event.(xproto.MapRequestEvent))
-			break
 		case xproto.ReparentNotifyEvent:
 			fmt.Println("reparent notify")
-			break
 		case xproto.MapNotifyEvent:
 			fmt.Println("MapNotify")
-			break
 		case xproto.ConfigureNotifyEvent:
 			fmt.Println("ConfigureNotify")
-			break
 		case xproto.UnmapNotifyEvent:
 			fmt.Println("unmapping")
 			wm.OnUnmapNotify(event.(xproto.UnmapNotifyEvent))
-			break
 		case xproto.DestroyNotifyEvent:
 			fmt.Println("DestroyNotify")
 			fmt.Println("Window:")
@@ -870,19 +863,16 @@ func (wm *WindowManager) Run() {
 				wm.remDestroyedWin(ev.Window)
 			}
 			fmt.Println("finished destroying")
-			break
 		case xproto.EnterNotifyEvent:
 			// when we enter the frame, change the border color
 			fmt.Println("EnterNotify")
 			fmt.Println(ev.Event)
 			wm.OnEnterNotify(event.(xproto.EnterNotifyEvent))
-			break
 		case xproto.LeaveNotifyEvent:
 			// when we leave the frame, change the border color
 			fmt.Println("LeaveNotify")
 			fmt.Println(ev.Event)
 			wm.OnLeaveNotify(event.(xproto.LeaveNotifyEvent))
-			break
 		case xproto.KeyPressEvent:
 			fmt.Println("keyPress")
 			// if mod key is down
@@ -1037,17 +1027,14 @@ func (wm *WindowManager) Run() {
 								}
 								fmt.Println("closing window:", wm.windows[ev.Child].id, "frame:", ev.Child)
 							}
-							break
 						case "force-quit":
 							// force close
 							err := xproto.DestroyWindowChecked(wm.conn, wm.windows[ev.Child].id).Check()
 							if err != nil {
 								fmt.Println("Couldn't force destroy:", err)
 							}
-							break
 						case "toggle-tiling":
 							wm.toggleTiling()
-							break
 						case "detach-tiling":
 							if wm.currWorkspace.detachTiling {
 								wm.currWorkspace.detachTiling = false
@@ -1222,13 +1209,10 @@ func (wm *WindowManager) Run() {
 								wm.setWindowDesktop(w, uint32(wm.workspaceIndex))
 							}
 							wm.fitToLayout()
-
-							break
 						}
 					}
 				}
 			}
-			break
 
 		case xproto.ClientMessageEvent:
 			fmt.Println("client message")
