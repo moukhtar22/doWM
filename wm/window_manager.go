@@ -469,30 +469,7 @@ func (wm *WindowManager) reload(focused xproto.ButtonPressEvent) {
 	for i, kb := range wm.config.Keybinds {
 		wm.config.Keybinds[i] = wm.createKeybind(&kb)
 	}
-
-	// workspace keybinds, ik not very idiomatic but its fine :)
-	wm.config.Keybinds = append(wm.config.Keybinds, []Keybind{
-		wm.createKeybind(&Keybind{Key: "0", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "1", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "2", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "3", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "4", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "5", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "6", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "7", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "8", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "9", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "0", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "1", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "2", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "3", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "4", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "5", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "6", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "7", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "8", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "9", Shift: true, Keycode: 0}),
-	}...)
+	wm.setKeyBinds()
 
 	windowsParent, err := xproto.QueryTree(wm.conn, wm.root).Reply()
 	if err != nil {
@@ -661,30 +638,7 @@ func (wm *WindowManager) Run() {
 		wm.config.Keybinds[i] = wm.createKeybind(&kb)
 	}
 
-	// workspace keybinds, ik not very idiomatic but its fine :)
-	wm.config.Keybinds = append(wm.config.Keybinds, []Keybind{
-		wm.createKeybind(&Keybind{Key: "0", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "1", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "2", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "3", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "4", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "5", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "6", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "7", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "8", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "9", Shift: false, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "0", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "1", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "2", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "3", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "4", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "5", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "6", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "7", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "8", Shift: true, Keycode: 0}),
-		wm.createKeybind(&Keybind{Key: "9", Shift: true, Keycode: 0}),
-	}...)
-
+	wm.setKeyBinds()
 	fmt.Println(wm.config.Keybinds)
 
 	// Only grab with Mod + left or right click (not plain Button1)
@@ -2629,3 +2583,28 @@ func (wm *WindowManager) Close() {
 }
 
 // The end.
+func (wm *WindowManager) setKeyBinds() {
+	// workspace keybinds, ik not very idiomatic but its fine :)
+	wm.config.Keybinds = append(wm.config.Keybinds, []Keybind{
+		wm.createKeybind(&Keybind{Key: "0", Shift: false, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "1", Shift: false, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "2", Shift: false, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "3", Shift: false, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "4", Shift: false, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "5", Shift: false, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "6", Shift: false, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "7", Shift: false, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "8", Shift: false, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "9", Shift: false, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "0", Shift: true, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "1", Shift: true, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "2", Shift: true, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "3", Shift: true, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "4", Shift: true, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "5", Shift: true, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "6", Shift: true, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "7", Shift: true, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "8", Shift: true, Keycode: 0}),
+		wm.createKeybind(&Keybind{Key: "9", Shift: true, Keycode: 0}),
+	}...)
+}
