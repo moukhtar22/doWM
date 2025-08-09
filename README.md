@@ -30,14 +30,14 @@ doWM is a beautiful floating and tiling window manager for X11 completely writte
 
 ## screenshots
 <div align="center">
-<img src="https://github.com/BobdaProgrammer/doWM/blob/main/images/gruvbox.png?raw=true" width="500px">
-<img src="https://github.com/BobdaProgrammer/doWM/blob/main/images/pinkgradient.png?raw=true" width="500px">
+<img src="https://github.com/BobdaProgrammer/doWM-web/blob/main/images/gruvbox.png?raw=true" width="500px">
+<img src="https://github.com/BobdaProgrammer/doWM-web/blob/main/images/pinkgradient.png?raw=true" width="500px">
   
-<img src="https://github.com/BobdaProgrammer/doWM/blob/main/images/8windowsweirdlayout.png?raw=true" width="500px">
-<img src="https://github.com/BobdaProgrammer/doWM/blob/main/images/fabricnotification.png?raw=true" width="500px">
+<img src="https://github.com/BobdaProgrammer/doWM-web/blob/main/images/8windowsweirdlayout.png?raw=true" width="500px">
+<img src="https://github.com/BobdaProgrammer/doWM-web/blob/main/images/fabricnotification.png?raw=true" width="500px">
 
-<img src="https://github.com/BobdaProgrammer/doWM/blob/main/images/musicwithnotification.png?raw=true" width="500px">
-<img src="https://github.com/BobdaProgrammer/doWM/blob/main/images/workspaceviewergruvbox.png?raw=true" width="500px">
+<img src="https://github.com/BobdaProgrammer/doWM-web/blob/main/images/musicwithnotification.png?raw=true" width="500px">
+<img src="https://github.com/BobdaProgrammer/doWM-web/blob/main/images/workspaceviewergruvbox.png?raw=true" width="500px">
 </div>  
 
 -------------
