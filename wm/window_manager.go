@@ -1399,9 +1399,8 @@ func (wm *WindowManager) resizeTiledY(increase bool, ev xproto.KeyPressEvent) bo
 		wm.currWorkspace.resizedLayout = resizeLayout
 		wm.fitToLayout()
 		return true
-	} else {
-		return false
 	}
+	return false
 }
 
 func (wm *WindowManager) internAtom(name string) (xproto.Atom, error) {
@@ -2181,13 +2180,12 @@ func (wm *WindowManager) onUnmapNotify(event xproto.UnmapNotifyEvent) {
 			slog.Info("couldn't unmap since window wasn't in clients")
 			fmt.Println(event.Window)
 			return
-		} else {
-			wm.currWorkspace = &wm.workspaces[index]
-			fmt.Println("IN WORKSPACE", index)
-			wm.unFrame(event.Window, false)
-			wm.currWorkspace = &wm.workspaces[wm.workspaceIndex]
-			return
 		}
+		wm.currWorkspace = &wm.workspaces[index]
+		fmt.Println("IN WORKSPACE", index)
+		wm.unFrame(event.Window, false)
+		wm.currWorkspace = &wm.workspaces[wm.workspaceIndex]
+		return
 	}
 	wm.unFrame(event.Window, false)
 	wm.fitToLayout()
@@ -2208,13 +2206,12 @@ func (wm *WindowManager) remDestroyedWin(window xproto.Window) {
 			slog.Info("couldn't unmap since window wasn't in clients")
 			fmt.Println(window)
 			return
-		} else {
-			wm.currWorkspace = &wm.workspaces[index]
-			fmt.Println("IN WORKSPACE", index, wm.currWorkspace.windowList)
-			wm.unFrame(window, false)
-			wm.currWorkspace = &wm.workspaces[wm.workspaceIndex]
-			return
 		}
+		wm.currWorkspace = &wm.workspaces[index]
+		fmt.Println("IN WORKSPACE", index, wm.currWorkspace.windowList)
+		wm.unFrame(window, false)
+		wm.currWorkspace = &wm.workspaces[wm.workspaceIndex]
+		return
 	}
 
 	wm.unFrame(window, false)
