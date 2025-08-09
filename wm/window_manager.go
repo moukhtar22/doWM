@@ -1244,7 +1244,7 @@ func (wm *WindowManager) Run() {
 	}
 }
 
-func (wm *WindowManager) resizeTiledX(increase bool, ev xproto.KeyPressEvent) bool {
+func (wm *WindowManager) resizeTiledX(increase bool, ev xproto.KeyPressEvent) bool { //nolint:unparam
 	geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
 	if err != nil {
 		return false
@@ -1307,7 +1307,7 @@ func (wm *WindowManager) resizeTiledX(increase bool, ev xproto.KeyPressEvent) bo
 	}
 }
 
-func (wm *WindowManager) resizeTiledY(increase bool, ev xproto.KeyPressEvent) bool {
+func (wm *WindowManager) resizeTiledY(increase bool, ev xproto.KeyPressEvent) bool { //nolint:unparam
 	geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
 	if err != nil {
 		return false
@@ -2104,7 +2104,7 @@ func (wm *WindowManager) OnEnterNotify(event xproto.EnterNotifyEvent) {
 	wm.setNetActiveWindow(event.Event)
 }
 
-func (wm *WindowManager) findWindow(window xproto.Window) (bool, int, xproto.Window) {
+func (wm *WindowManager) findWindow(window xproto.Window) (bool, int, xproto.Window) { //nolint:unparam
 	fmt.Println("FINDING WINDOW", window)
 	// look through all workspaces and windows to find a window (this is for if a window is deleted by a window from
 	// another workspace, we need to search for it)
