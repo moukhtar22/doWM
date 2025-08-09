@@ -530,7 +530,7 @@ func (wm *WindowManager) pointerToWindow(window xproto.Window) error {
 }
 
 // Run runs the window manager.
-func (wm *WindowManager) Run() {
+func (wm *WindowManager) Run() { //nolint:cyclop
 	fmt.Println("window manager up and running")
 
 	// get autostart
