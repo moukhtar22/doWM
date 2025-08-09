@@ -1525,7 +1525,7 @@ func runCommand(cmdStr string) {
 }
 
 func (wm *WindowManager) getBar(vals []byte) (int, int, int, int) {
-	// calculates where the bar is (more explanitary in createTilingSpace)
+	// calculates where the bar is (more explanatary in createTilingSpace)
 
 	var maxLeft, maxRight, maxTop, maxBottom int
 	left := int(binary.LittleEndian.Uint32(vals[0:4]))
@@ -1753,13 +1753,13 @@ func (wm *WindowManager) enableTiling() {
 	wm.setNetWorkArea()
 }
 
-func (wm *WindowManager) toggleFullScreen(Child xproto.Window) {
-	win := wm.windows[Child]
+func (wm *WindowManager) toggleFullScreen(child xproto.Window) {
+	win := wm.windows[child]
 	if win != nil {
 		if win.Fullscreen {
-			wm.disableFullscreen(win, Child)
+			wm.disableFullscreen(win, child)
 		} else {
-			wm.fullscreen(win, Child)
+			wm.fullscreen(win, child)
 		}
 	}
 }
@@ -2167,7 +2167,7 @@ func (wm *WindowManager) onUnmapNotify(event xproto.UnmapNotifyEvent) {
 		return
 	}
 
-	var found = false
+	found := false
 	for _, win := range wm.currWorkspace.windowList {
 		if win.id == event.Window {
 			found = true
