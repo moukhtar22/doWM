@@ -2194,7 +2194,7 @@ func (wm *WindowManager) onUnmapNotify(event xproto.UnmapNotifyEvent) {
 }
 
 func (wm *WindowManager) remDestroyedWin(window xproto.Window) {
-	var found = false
+	found := false
 	for _, win := range wm.currWorkspace.windowList {
 		if win.id == window {
 			found = true
@@ -2221,7 +2221,7 @@ func (wm *WindowManager) remDestroyedWin(window xproto.Window) {
 	wm.fitToLayout()
 }
 
-func (wm *WindowManager) unFrame(w xproto.Window, unmapped bool) {
+func (wm *WindowManager) unFrame(w xproto.Window, _ bool) {
 	// if it is already unmapped then no need to do it again
 	err := xproto.UnmapWindowChecked(
 		wm.conn,
