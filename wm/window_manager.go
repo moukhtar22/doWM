@@ -352,8 +352,8 @@ func getNumLockMask(conn *xgb.Conn) uint16 {
 	}
 
 	// Each modifier (Shift, Lock, Control, Mod1-Mod5) has modMap.KeycodesPerModifier keycodes
-	for modIndex := 0; modIndex < 8; modIndex++ {
-		for i := 0; i < int(modMap.KeycodesPerModifier); i++ {
+	for modIndex := range 8 {
+		for i := range int(modMap.KeycodesPerModifier) {
 			index := modIndex*int(modMap.KeycodesPerModifier) + i
 			if modMap.Keycodes[index] == numLockKeycode {
 				return 1 << uint(modIndex)
@@ -382,7 +382,7 @@ func getKeycodeForKeysym(conn *xgb.Conn, keysym uint32) xproto.Keycode {
 
 	for kc := firstKeycode; kc <= lastKeycode; kc++ {
 		offset := int(kc-firstKeycode) * int(keymap.KeysymsPerKeycode)
-		for i := 0; i < int(keymap.KeysymsPerKeycode); i++ {
+		for i := range int(keymap.KeysymsPerKeycode) {
 			if keymap.Keysyms[offset+i] == targetKeysym {
 				return kc
 			}
@@ -1955,7 +1955,7 @@ func (wm *WindowManager) sendWmDelete(conn *xgb.Conn, window xproto.Window) erro
 	}
 
 	supportsDelete := false
-	for i := 0; i < int(prop.ValueLen); i++ {
+	for i := range int(prop.ValueLen) {
 		atom := xgb.Get32(prop.Value[i*4:])
 		if xproto.Atom(atom) == wmDeleteAtom.Atom {
 			supportsDelete = true
