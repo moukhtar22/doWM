@@ -623,7 +623,7 @@ func (wm *WindowManager) Run() {
 
 	for _, window := range TopLevelWindows {
 		if !shouldIgnoreWindow(wm.conn, window) {
-			wm.Frame(window, true)
+			wm.frame(window, true)
 		}
 	}
 
@@ -839,10 +839,10 @@ func (wm *WindowManager) Run() {
 		case xproto.CreateNotifyEvent:
 			fmt.Println("create notify")
 		case xproto.ConfigureRequestEvent:
-			wm.OnConfigureRequest(event.(xproto.ConfigureRequestEvent))
+			wm.onConfigureRequest(event.(xproto.ConfigureRequestEvent))
 		case xproto.MapRequestEvent:
 			fmt.Println("MapRequest")
-			wm.OnMapRequest(event.(xproto.MapRequestEvent))
+			wm.onMapRequest(event.(xproto.MapRequestEvent))
 		case xproto.ReparentNotifyEvent:
 			fmt.Println("reparent notify")
 		case xproto.MapNotifyEvent:
@@ -851,7 +851,7 @@ func (wm *WindowManager) Run() {
 			fmt.Println("ConfigureNotify")
 		case xproto.UnmapNotifyEvent:
 			fmt.Println("unmapping")
-			wm.OnUnmapNotify(event.(xproto.UnmapNotifyEvent))
+			wm.onUnmapNotify(event.(xproto.UnmapNotifyEvent))
 		case xproto.DestroyNotifyEvent:
 			fmt.Println("DestroyNotify")
 			fmt.Println("Window:")
@@ -867,12 +867,12 @@ func (wm *WindowManager) Run() {
 			// when we enter the frame, change the border color
 			fmt.Println("EnterNotify")
 			fmt.Println(ev.Event)
-			wm.OnEnterNotify(event.(xproto.EnterNotifyEvent))
+			wm.onEnterNotify(event.(xproto.EnterNotifyEvent))
 		case xproto.LeaveNotifyEvent:
 			// when we leave the frame, change the border color
 			fmt.Println("LeaveNotify")
 			fmt.Println(ev.Event)
-			wm.OnLeaveNotify(event.(xproto.LeaveNotifyEvent))
+			wm.onLeaveNotify(event.(xproto.LeaveNotifyEvent))
 		case xproto.KeyPressEvent:
 			fmt.Println("keyPress")
 			// if mod key is down
@@ -1022,7 +1022,7 @@ func (wm *WindowManager) Run() {
 						case "quit":
 							if _, ok := wm.windows[ev.Child]; ok {
 								// EMWH way of politely saying to destroy
-								if err := wm.SendWmDelete(wm.conn, wm.windows[ev.Child].id); err != nil {
+								if err := wm.sendWmDelete(wm.conn, wm.windows[ev.Child].id); err != nil {
 									slog.Error("send WmDelete", "error", err)
 								}
 								fmt.Println("closing window:", wm.windows[ev.Child].id, "frame:", ev.Child)
@@ -1936,7 +1936,7 @@ func (wm *WindowManager) switchWorkspace(workspace int) {
 	wm.layoutIndex = wm.currWorkspace.layoutIndex
 }
 
-func (wm *WindowManager) SendWmDelete(conn *xgb.Conn, window xproto.Window) error {
+func (wm *WindowManager) sendWmDelete(conn *xgb.Conn, window xproto.Window) error {
 	// polite EMWH way of telling the window to delete itself
 	wmProtocolsAtom, _ := xproto.InternAtom(conn, true, uint16(len("WM_PROTOCOLS")), "WM_PROTOCOLS").
 		Reply()
@@ -1984,7 +1984,7 @@ func (wm *WindowManager) SendWmDelete(conn *xgb.Conn, window xproto.Window) erro
 	).Check()
 }
 
-func (wm *WindowManager) OnLeaveNotify(event xproto.LeaveNotifyEvent) {
+func (wm *WindowManager) onLeaveNotify(event xproto.LeaveNotifyEvent) {
 	// change border color when you leave a window
 	Col := wm.config.BorderUnactive
 
@@ -2112,7 +2112,7 @@ func (wm *WindowManager) setNetClientList() {
 	)
 }
 
-func (wm *WindowManager) OnEnterNotify(event xproto.EnterNotifyEvent) {
+func (wm *WindowManager) onEnterNotify(event xproto.EnterNotifyEvent) {
 	// set focus when we enter a window and change border color
 	err := xproto.SetInputFocusChecked(wm.conn, xproto.InputFocusPointerRoot, event.Event, xproto.TimeCurrentTime).
 		Check()
@@ -2154,7 +2154,7 @@ func (wm *WindowManager) findWindow(window xproto.Window) (bool, int, xproto.Win
 	return false, 0, 0
 }
 
-func (wm *WindowManager) OnUnmapNotify(event xproto.UnmapNotifyEvent) {
+func (wm *WindowManager) onUnmapNotify(event xproto.UnmapNotifyEvent) {
 	if event.Event == wm.root {
 		slog.Info("Ignore UnmapNotify for reparented pre-existing window")
 		fmt.Println(event.Window)
@@ -2178,12 +2178,12 @@ func (wm *WindowManager) OnUnmapNotify(event xproto.UnmapNotifyEvent) {
 		} else {
 			wm.currWorkspace = &wm.workspaces[index]
 			fmt.Println("IN WORKSPACE", index)
-			wm.UnFrame(event.Window, false)
+			wm.unFrame(event.Window, false)
 			wm.currWorkspace = &wm.workspaces[wm.workspaceIndex]
 			return
 		}
 	}
-	wm.UnFrame(event.Window, false)
+	wm.unFrame(event.Window, false)
 	wm.fitToLayout()
 }
 
@@ -2205,17 +2205,17 @@ func (wm *WindowManager) remDestroyedWin(Window xproto.Window) {
 		} else {
 			wm.currWorkspace = &wm.workspaces[index]
 			fmt.Println("IN WORKSPACE", index, wm.currWorkspace.windowList)
-			wm.UnFrame(Window, false)
+			wm.unFrame(Window, false)
 			wm.currWorkspace = &wm.workspaces[wm.workspaceIndex]
 			return
 		}
 	}
 
-	wm.UnFrame(Window, false)
+	wm.unFrame(Window, false)
 	wm.fitToLayout()
 }
 
-func (wm *WindowManager) UnFrame(w xproto.Window, unmapped bool) {
+func (wm *WindowManager) unFrame(w xproto.Window, unmapped bool) {
 	// if it is already unmapped then no need to do it again
 	err := xproto.UnmapWindowChecked(
 		wm.conn,
@@ -2415,7 +2415,7 @@ func (wm *WindowManager) isAbove(w xproto.Window) {
 	}
 }
 
-func (wm *WindowManager) OnMapRequest(event xproto.MapRequestEvent) {
+func (wm *WindowManager) onMapRequest(event xproto.MapRequestEvent) {
 	// if there is a window to be ignored then we just map it but don't handle it
 	if shouldIgnoreWindow(wm.conn, event.Window) {
 		fmt.Println("ignored window since it is either dock, splash, dialog or notify")
@@ -2430,7 +2430,7 @@ func (wm *WindowManager) OnMapRequest(event xproto.MapRequestEvent) {
 	}
 
 	// frame the window and make sure to work out the new tiling layout
-	wm.Frame(event.Window, false)
+	wm.frame(event.Window, false)
 	if wm.currWorkspace.tiling {
 		wm.fitToLayout()
 	}
@@ -2438,7 +2438,7 @@ func (wm *WindowManager) OnMapRequest(event xproto.MapRequestEvent) {
 	wm.setWindowDesktop(event.Window, uint32(wm.workspaceIndex))
 }
 
-func (wm *WindowManager) Frame(w xproto.Window, createdBeforeWM bool) {
+func (wm *WindowManager) frame(w xproto.Window, createdBeforeWM bool) {
 	if _, exists := wm.windows[w]; exists {
 		fmt.Println("Already framed", w)
 		return
@@ -2570,7 +2570,7 @@ func (wm *WindowManager) Frame(w xproto.Window, createdBeforeWM bool) {
 	fmt.Println("Framed window" + strconv.Itoa(int(w)) + "[" + strconv.Itoa(int(w)) + "]")
 }
 
-func (wm *WindowManager) OnConfigureRequest(event xproto.ConfigureRequestEvent) {
+func (wm *WindowManager) onConfigureRequest(event xproto.ConfigureRequestEvent) {
 	changes := createChanges(event)
 
 	fmt.Println(event.ValueMask)
