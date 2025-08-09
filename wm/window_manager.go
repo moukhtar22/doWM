@@ -796,7 +796,7 @@ func (wm *WindowManager) Run() {
 					if window.id != ev.Child && ev.EventX < geom.X+int16(geom.Width) && ev.EventX > geom.X &&
 						ev.EventY < geom.Y+int16(geom.Height) && ev.EventY > geom.Y {
 						fmt.Println("MOVING", ev.Child, window.id)
-						swapWindowsId(&wm.currWorkspace.windowList, ev.Child, window.id)
+						swapWindowsID(&wm.currWorkspace.windowList, ev.Child, window.id)
 						wm.fitToLayout()
 						found = true
 						break
@@ -1273,7 +1273,7 @@ func (wm *WindowManager) Run() {
 
 		default:
 			fmt.Println("event: " + event.String())
-			fmt.Println(event.Bytes())
+			fmt.Println(event.Bytes()) //nolint:staticcheck
 		}
 	}
 }
@@ -1353,7 +1353,7 @@ func (wm *WindowManager) resizeTiledY(increase bool, ev xproto.KeyPressEvent) bo
 	}
 
 	var resizeLayout ResizeLayout
-	var ok = true
+	ok := true
 	for _, win := range wm.currWorkspace.windowList {
 		geomwin, err := xproto.GetGeometry(wm.conn, xproto.Drawable(win.id)).Reply()
 		if err != nil {
@@ -1480,11 +1480,11 @@ func swapWindows(arr *[]*Window, first int, last int) {
 	(*arr)[first], (*arr)[last] = (*arr)[last], (*arr)[first]
 }
 
-func swapWindowsId(arr *[]*Window, first xproto.Window, last xproto.Window) {
+func swapWindowsID(arr *[]*Window, first xproto.Window, last xproto.Window) {
 	var res1 int
 	var res2 int
 	for i, win := range *arr {
-		if win.id == first {
+		if win.id == first { //nolint:staticcheck
 			res1 = i
 		} else if win.id == last {
 			res2 = i
@@ -1688,14 +1688,14 @@ func (wm *WindowManager) fitToLayout() {
 	}
 }
 
-func (wm *WindowManager) configureWindow(Frame xproto.Window, X, Y, Width, Height int) {
+func (wm *WindowManager) configureWindow(frame xproto.Window, x, y, width, height int) {
 	// configure the window to how it wants to be
 	_ = xproto.ConfigureWindowChecked(
 		wm.conn,
-		Frame,
+		frame,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowHeight,
 		[]uint32{
-			uint32(X), uint32(Y), uint32(Width), uint32(Height),
+			uint32(x), uint32(y), uint32(width), uint32(height),
 		},
 	).
 		Check()
@@ -1764,11 +1764,11 @@ func (wm *WindowManager) toggleFullScreen(Child xproto.Window) {
 	}
 }
 
-func (wm *WindowManager) disableFullscreen(win *Window, Child xproto.Window) {
+func (wm *WindowManager) disableFullscreen(win *Window, child xproto.Window) {
 	fmt.Println("DISABLING FULL SCREEN")
-	wm.windows[Child].Fullscreen = false
+	wm.windows[child].Fullscreen = false
 	for i, window := range wm.currWorkspace.windowList {
-		if window.id == Child {
+		if window.id == child {
 			wm.currWorkspace.windowList[i].Fullscreen = false
 		}
 		fmt.Println(window.Fullscreen)
@@ -1776,7 +1776,7 @@ func (wm *WindowManager) disableFullscreen(win *Window, Child xproto.Window) {
 	// set the frame back to what it used to be same with the client, but sort out tiling layout anyway just in case
 	err := xproto.ConfigureWindowChecked(
 		wm.conn,
-		Child,
+		child,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|
 			xproto.ConfigWindowWidth|xproto.ConfigWindowHeight|xproto.ConfigWindowBorderWidth,
 		[]uint32{
@@ -1793,30 +1793,30 @@ func (wm *WindowManager) disableFullscreen(win *Window, Child xproto.Window) {
 	wm.fitToLayout()
 }
 
-func (wm *WindowManager) fullscreen(win *Window, Child xproto.Window) {
+func (wm *WindowManager) fullscreen(_ *Window, child xproto.Window) {
 	// set window state so it can be restored later then configure window to be full width and height, sam with client,
 	// also take away border
-	wm.windows[Child].Fullscreen = true
+	wm.windows[child].Fullscreen = true
 	for i, window := range wm.currWorkspace.windowList {
-		if window.id == Child {
+		if window.id == child {
 			wm.currWorkspace.windowList[i].Fullscreen = true
 		}
 	}
 	xproto.ConfigureWindow(
 		wm.conn,
-		Child,
+		child,
 		xproto.ConfigWindowStackMode,
 		[]uint32{xproto.StackModeAbove},
 	)
-	attr, _ := xproto.GetGeometry(wm.conn, xproto.Drawable(Child)).Reply()
-	win = wm.windows[Child]
+	attr, _ := xproto.GetGeometry(wm.conn, xproto.Drawable(child)).Reply()
+	win := wm.windows[child]
 	win.X = int(attr.X)
 	win.Y = int(attr.Y)
 	win.Width = int(attr.Width)
 	win.Height = int(attr.Height)
 	err := xproto.ConfigureWindowChecked(
 		wm.conn,
-		Child,
+		child,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|
 			xproto.ConfigWindowWidth|xproto.ConfigWindowHeight|xproto.ConfigWindowBorderWidth,
 		[]uint32{0, 0, uint32(wm.width), uint32(wm.height), 0},
@@ -2193,31 +2193,31 @@ func (wm *WindowManager) onUnmapNotify(event xproto.UnmapNotifyEvent) {
 	wm.fitToLayout()
 }
 
-func (wm *WindowManager) remDestroyedWin(Window xproto.Window) {
+func (wm *WindowManager) remDestroyedWin(window xproto.Window) {
 	var found = false
 	for _, win := range wm.currWorkspace.windowList {
-		if win.id == Window {
+		if win.id == window {
 			found = true
 			break
 		}
 	}
 	if !found {
 		fmt.Println("IN UNMAPPING COULDNT FIND WIN NOW SEARCHING")
-		ok, index, _ := wm.findWindow(Window)
+		ok, index, _ := wm.findWindow(window)
 		if !ok {
 			slog.Info("couldn't unmap since window wasn't in clients")
-			fmt.Println(Window)
+			fmt.Println(window)
 			return
 		} else {
 			wm.currWorkspace = &wm.workspaces[index]
 			fmt.Println("IN WORKSPACE", index, wm.currWorkspace.windowList)
-			wm.unFrame(Window, false)
+			wm.unFrame(window, false)
 			wm.currWorkspace = &wm.workspaces[wm.workspaceIndex]
 			return
 		}
 	}
 
-	wm.unFrame(Window, false)
+	wm.unFrame(window, false)
 	wm.fitToLayout()
 }
 
