@@ -3,6 +3,7 @@ package wm
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -257,10 +258,13 @@ func createConfig(f koanf.Provider) Config {
 	// Load the config file
 	if err := k.Load(f, yaml.Parser()); err == nil {
 		// Unmarshal — existing keys override the defaults
-		k.UnmarshalWithConf("", &cfg, koanf.UnmarshalConf{Tag: "koanf", FlatPaths: false})
+		if err := k.UnmarshalWithConf("", &cfg, koanf.UnmarshalConf{Tag: "koanf", FlatPaths: false}); err != nil {
+			slog.Warn("couldn't load config, using defaults")
+			_ = exec.Command("notify-send", "'error in doWM config, using defaults'").Start()
+		}
 	} else {
 		slog.Warn("couldn't load config, using defaults")
-		exec.Command("notify-send", "'error in doWM config, using defaults'").Start()
+		_ = exec.Command("notify-send", "'error in doWM config, using defaults'").Start()
 	}
 
 	fmt.Println(cfg.Layouts)
@@ -272,8 +276,8 @@ func Create() (*WindowManager, error) {
 	// establish connection
 	X, err := xgb.NewConn()
 	if err != nil {
-		slog.Error("Couldn't open X display")
-		return nil, fmt.Errorf("Couldn't open X display")
+		slog.Error("Couldn't open X display", "error", err)
+		return nil, fmt.Errorf("couldn't open X display %w", err)
 	}
 
 	// get xgbutil connection aswell for keybinds
@@ -401,6 +405,10 @@ func (wm *WindowManager) createKeybind(kb *Keybind) Keybind {
 	}
 	err := xproto.GrabKeyChecked(wm.conn, true, wm.root, Mask, KeyCode, xproto.GrabModeAsync, xproto.GrabModeAsync).
 		Check()
+	if err != nil {
+		slog.Error("couldn't grab key", "error:", err)
+	}
+
 	err = xproto.GrabKeyChecked(
 		wm.conn,
 		true,
@@ -411,6 +419,9 @@ func (wm *WindowManager) createKeybind(kb *Keybind) Keybind {
 		xproto.GrabModeAsync,
 	).
 		Check()
+	if err != nil {
+		slog.Error("couldn't grab key", "error:", err)
+	}
 	numlock := getNumLockMask(wm.conn)
 	if numlock != wm.mod {
 		err = xproto.GrabKeyChecked(
@@ -424,7 +435,6 @@ func (wm *WindowManager) createKeybind(kb *Keybind) Keybind {
 		).
 			Check()
 	}
-
 	if err != nil {
 		slog.Error("couldn't create keybind", "error:", err)
 	}
@@ -547,7 +557,7 @@ func (wm *WindowManager) Run() {
 
 		if fileExists(scriptPath) {
 			fmt.Println("autostart exists..., running")
-			exec.Command(scriptPath).Start()
+			_ = exec.Command(scriptPath).Start()
 		}
 	}
 
@@ -685,6 +695,9 @@ func (wm *WindowManager) Run() {
 		mMask,
 	).
 		Check()
+	if err != nil {
+		slog.Error("couldn't grab button", "error:", err.Error())
+	}
 
 	err = xproto.GrabButtonChecked(
 		wm.conn,
@@ -740,8 +753,11 @@ func (wm *WindowManager) Run() {
 			continue
 		}
 		if len(wm.currWorkspace.windowList) == 0 {
-			xproto.SetInputFocusChecked(wm.conn, xproto.InputFocusPointerRoot, wm.root, xproto.TimeCurrentTime).
+			err := xproto.SetInputFocusChecked(wm.conn, xproto.InputFocusPointerRoot, wm.root, xproto.TimeCurrentTime).
 				Check()
+			if err != nil {
+				slog.Error("could not set input focus", "error", err)
+			}
 		}
 		switch ev := event.(type) {
 		case xproto.ButtonPressEvent:
@@ -884,7 +900,9 @@ func (wm *WindowManager) Run() {
 						switch kb.Role {
 						case "resize-x-scale-up":
 							if wm.currWorkspace.tiling == true {
-								wm.pointerToWindow(ev.Child)
+								if err := wm.pointerToWindow(ev.Child); err != nil {
+									slog.Error("couldn't move pointer to window", "error:", err)
+								}
 								if !wm.resizeTiledX(true, ev) {
 									break
 								}
@@ -895,11 +913,15 @@ func (wm *WindowManager) Run() {
 								}
 								xproto.ConfigureWindowChecked(wm.conn, ev.Child, xproto.ConfigWindowWidth,
 									[]uint32{uint32(geom.Width + uint16(wm.config.Resize))})
-								wm.pointerToWindow(ev.Child)
+								if err := wm.pointerToWindow(ev.Child); err != nil {
+									slog.Error("couldn't move pointer to window", "error:", err)
+								}
 							}
 						case "resize-x-scale-down":
 							if wm.currWorkspace.tiling == true {
-								wm.pointerToWindow(ev.Child)
+								if err := wm.pointerToWindow(ev.Child); err != nil {
+									slog.Error("couldn't move pointer to window", "error:", err)
+								}
 								if !wm.resizeTiledX(false, ev) {
 									break
 								}
@@ -911,12 +933,16 @@ func (wm *WindowManager) Run() {
 								if geom.Width > 10 {
 									xproto.ConfigureWindowChecked(wm.conn, ev.Child, xproto.ConfigWindowWidth,
 										[]uint32{uint32(geom.Width - uint16(wm.config.Resize))})
-									wm.pointerToWindow(ev.Child)
+									if err := wm.pointerToWindow(ev.Child); err != nil {
+										slog.Error("couldn't move pointer to window", "error:", err)
+									}
 								}
 							}
 						case "resize-y-scale-up":
 							if wm.currWorkspace.tiling == true {
-								wm.pointerToWindow(ev.Child)
+								if err := wm.pointerToWindow(ev.Child); err != nil {
+									slog.Error("couldn't move pointer to window", "error:", err)
+								}
 								if !wm.resizeTiledY(true, ev) {
 									break
 								}
@@ -927,11 +953,15 @@ func (wm *WindowManager) Run() {
 								}
 								xproto.ConfigureWindowChecked(wm.conn, ev.Child, xproto.ConfigWindowHeight,
 									[]uint32{uint32(geom.Height + uint16(wm.config.Resize))})
-								wm.pointerToWindow(ev.Child)
+								if err := wm.pointerToWindow(ev.Child); err != nil {
+									slog.Error("couldn't move pointer to window", "error:", err)
+								}
 							}
 						case "resize-y-scale-down":
 							if wm.currWorkspace.tiling == true {
-								wm.pointerToWindow(ev.Child)
+								if err := wm.pointerToWindow(ev.Child); err != nil {
+									slog.Error("couldn't move pointer to window", "error:", err)
+								}
 								if !wm.resizeTiledY(false, ev) {
 									break
 								}
@@ -946,7 +976,9 @@ func (wm *WindowManager) Run() {
 								if geom.Height > 10 {
 									xproto.ConfigureWindowChecked(wm.conn, ev.Child, xproto.ConfigWindowHeight,
 										[]uint32{uint32(geom.Height - uint16(wm.config.Resize))})
-									wm.pointerToWindow(ev.Child)
+									if err := wm.pointerToWindow(ev.Child); err != nil {
+										slog.Error("couldn't move pointer to window", "error:", err)
+									}
 								}
 							}
 						case "move-x-right":
@@ -958,7 +990,9 @@ func (wm *WindowManager) Run() {
 								break
 							}
 							xproto.ConfigureWindowChecked(wm.conn, ev.Child, xproto.ConfigWindowX, []uint32{uint32(geom.X + 10)})
-							wm.pointerToWindow(ev.Child)
+							if err := wm.pointerToWindow(ev.Child); err != nil {
+								slog.Error("couldn't move pointer to window", "error:", err)
+							}
 						case "move-x-left":
 							if wm.currWorkspace.tiling == true {
 								break
@@ -968,7 +1002,9 @@ func (wm *WindowManager) Run() {
 								break
 							}
 							xproto.ConfigureWindowChecked(wm.conn, ev.Child, xproto.ConfigWindowX, []uint32{uint32(geom.X - 10)})
-							wm.pointerToWindow(ev.Child)
+							if err := wm.pointerToWindow(ev.Child); err != nil {
+								slog.Error("couldn't move pointer to window", "error:", err)
+							}
 						case "move-y-up":
 							if wm.currWorkspace.tiling == true {
 								break
@@ -978,7 +1014,9 @@ func (wm *WindowManager) Run() {
 								break
 							}
 							xproto.ConfigureWindowChecked(wm.conn, ev.Child, xproto.ConfigWindowY, []uint32{uint32(geom.Y - 10)})
-							wm.pointerToWindow(ev.Child)
+							if err := wm.pointerToWindow(ev.Child); err != nil {
+								slog.Error("couldn't move pointer to window", "error:", err)
+							}
 						case "move-y-down":
 							if wm.currWorkspace.tiling == true {
 								break
@@ -988,11 +1026,15 @@ func (wm *WindowManager) Run() {
 								break
 							}
 							xproto.ConfigureWindowChecked(wm.conn, ev.Child, xproto.ConfigWindowY, []uint32{uint32(geom.Y + 10)})
-							wm.pointerToWindow(ev.Child)
+							if err := wm.pointerToWindow(ev.Child); err != nil {
+								slog.Error("couldn't move pointer to window", "error:", err)
+							}
 						case "quit":
 							if _, ok := wm.windows[ev.Child]; ok {
 								// EMWH way of politely saying to destroy
-								wm.SendWmDelete(wm.conn, wm.windows[ev.Child].id)
+								if err := wm.SendWmDelete(wm.conn, wm.windows[ev.Child].id); err != nil {
+									slog.Error("send WmDelete", "error", err)
+								}
 								fmt.Println("closing window:", wm.windows[ev.Child].id, "frame:", ev.Child)
 							}
 							break
@@ -1033,8 +1075,7 @@ func (wm *WindowManager) Run() {
 											swapWindows(&wm.currWorkspace.windowList, i, i-1)
 										}
 										wm.fitToLayout()
-										err := wm.pointerToWindow(currWindow)
-										if err != nil {
+										if err := wm.pointerToWindow(currWindow); err != nil {
 											slog.Error("couldn't move pointer to window", "error:", err)
 										}
 										break swapLeft
@@ -1054,7 +1095,9 @@ func (wm *WindowManager) Run() {
 											swapWindows(&wm.currWorkspace.windowList, i, i+1)
 										}
 										wm.fitToLayout()
-										wm.pointerToWindow(currWindow)
+										if err := wm.pointerToWindow(currWindow); err != nil {
+											slog.Error("couldn't move pointer to window", "error:", err)
+										}
 										break swapRight
 									}
 								}
@@ -1066,9 +1109,13 @@ func (wm *WindowManager) Run() {
 								for i := range wm.currWorkspace.windowList {
 									if currWindow == wm.currWorkspace.windowList[i].id {
 										if i == len(wm.currWorkspace.windowList)-1 {
-											wm.pointerToWindow(wm.currWorkspace.windowList[0].id)
+											if err := wm.pointerToWindow(wm.currWorkspace.windowList[0].id); err != nil {
+												slog.Error("couldn't move pointer to window", "error:", err)
+											}
 										} else {
-											wm.pointerToWindow(wm.currWorkspace.windowList[i+1].id)
+											if err := wm.pointerToWindow(wm.currWorkspace.windowList[i+1].id); err != nil {
+												slog.Error("couldn't move pointer to window", "error:", err)
+											}
 										}
 										break focusRight
 									}
@@ -1081,9 +1128,14 @@ func (wm *WindowManager) Run() {
 								for i := range wm.currWorkspace.windowList {
 									if currWindow == wm.currWorkspace.windowList[i].id {
 										if i == 0 {
-											wm.pointerToWindow(wm.currWorkspace.windowList[len(wm.currWorkspace.windowList)-1].id)
+											err := wm.pointerToWindow(wm.currWorkspace.windowList[len(wm.currWorkspace.windowList)-1].id)
+											if err != nil {
+												slog.Error("couldn't move pointer to window", "error:", err)
+											}
 										} else {
-											wm.pointerToWindow(wm.currWorkspace.windowList[i-1].id)
+											if err := wm.pointerToWindow(wm.currWorkspace.windowList[i-1].id); err != nil {
+												slog.Error("couldn't move pointer to window", "error:", err)
+											}
 										}
 										break focusLeft
 									}
@@ -1475,11 +1527,11 @@ func runCommand(cmdStr string) {
 	}
 	if len(args) < 2 {
 		cmd := exec.Command(args[0])
-		cmd.Start()
+		_ = cmd.Start()
 		return
 	}
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Start()
+	_ = cmd.Start()
 }
 
 func (wm *WindowManager) getBar(vals []byte) (int, int, int, int) {
@@ -1809,7 +1861,7 @@ func (wm *WindowManager) broadcastWorkspaceCount() {
 		Reply()
 	cardinalAtom, _ := xproto.InternAtom(wm.conn, true, uint16(len("CARDINAL")), "CARDINAL").Reply()
 
-	xproto.ChangePropertyChecked(
+	_ = xproto.ChangePropertyChecked(
 		wm.conn,
 		xproto.PropModeReplace,
 		wm.root,
@@ -1910,7 +1962,7 @@ func (wm *WindowManager) SendWmDelete(conn *xgb.Conn, window xproto.Window) erro
 	prop, err := xproto.GetProperty(conn, false, window, wmProtocolsAtom.Atom, xproto.AtomAtom, 0, (1<<32)-1).
 		Reply()
 	if err != nil || prop.Format != 32 {
-		return fmt.Errorf("couldn't get WM_PROTOCOLS")
+		return fmt.Errorf("couldn't get WM_PROTOCOLS %w", err)
 	}
 
 	supportsDelete := false
@@ -1923,7 +1975,7 @@ func (wm *WindowManager) SendWmDelete(conn *xgb.Conn, window xproto.Window) erro
 	}
 
 	if !supportsDelete {
-		return fmt.Errorf("WM_DELETE_WINDOW not supported")
+		return errors.New("WM_DELETE_WINDOW not supported")
 	}
 
 	ev := xproto.ClientMessageEvent{
@@ -1999,7 +2051,7 @@ func (wm *WindowManager) setNetActiveWindow(win xproto.Window) {
 
 	// Convert uint32 to []byte
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.LittleEndian, win)
+	_ = binary.Write(buf, binary.LittleEndian, win)
 
 	xproto.ChangeProperty(wm.conn,
 		xproto.PropModeReplace,
@@ -2080,6 +2132,9 @@ func (wm *WindowManager) OnEnterNotify(event xproto.EnterNotifyEvent) {
 	// set focus when we enter a window and change border color
 	err := xproto.SetInputFocusChecked(wm.conn, xproto.InputFocusPointerRoot, event.Event, xproto.TimeCurrentTime).
 		Check()
+	if err != nil {
+		slog.Error("couldn't set input focus", "error", err)
+	}
 	Col := wm.config.BorderActive
 	err = xproto.ChangeWindowAttributesChecked(
 		wm.conn,
@@ -2485,6 +2540,10 @@ func (wm *WindowManager) Frame(w xproto.Window, createdBeforeWM bool) {
 				xproto.EventMaskSubstructureNotify | xproto.EventMaskKeyPress | xproto.EventMaskKeyRelease,
 		},
 	).Check()
+	if err != nil {
+		slog.Error("couldn't save window attributes", "error:", err.Error())
+		return
+	}
 	// add it to the x11 save set
 	err = xproto.ChangeSaveSetChecked(
 		wm.conn,
