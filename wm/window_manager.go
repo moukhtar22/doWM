@@ -530,8 +530,8 @@ func (wm *WindowManager) pointerToWindow(window xproto.Window) error {
 		return err
 	}
 
-	x := int16(trans.DstX) + int16(geom.Width)/2
-	y := int16(trans.DstY) + int16(geom.Height)/2
+	x := trans.DstX + int16(geom.Width)/2
+	y := trans.DstY + int16(geom.Height)/2
 
 	return xproto.WarpPointerChecked(wm.conn, 0, xproto.Setup(wm.conn).DefaultScreen(wm.conn).Root, 0, 0, 0, 0, x, y).
 		Check()
@@ -743,10 +743,9 @@ func (wm *WindowManager) Run() {
 			xproto.SetInputFocusChecked(wm.conn, xproto.InputFocusPointerRoot, wm.root, xproto.TimeCurrentTime).
 				Check()
 		}
-		switch event.(type) {
+		switch ev := event.(type) {
 		case xproto.ButtonPressEvent:
 			// set values on current window, used later with moving and resizing
-			ev := event.(xproto.ButtonPressEvent)
 			if ev.Child != 0 && ev.State&mMask != 0 {
 				attr, _ = xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
 				start = ev
@@ -764,7 +763,6 @@ func (wm *WindowManager) Run() {
 		case xproto.ButtonReleaseEvent:
 			// if we don't have the mouse down, we don't want to move or resize
 			if wm.tiling {
-				ev := event.(xproto.ButtonReleaseEvent)
 				found := false
 				for _, window := range wm.currWorkspace.windowList {
 					geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(window.id)).Reply()
@@ -773,8 +771,8 @@ func (wm *WindowManager) Run() {
 					}
 					fmt.Println("id", window.id, "mouse X:", ev.EventX, "mouse Y:", ev.EventY, "win X:", geom.X, "win Y:", geom.Y,
 						"win width", geom.Width, "win height", geom.Height, "RELEASE")
-					if window.id != ev.Child && ev.EventX < geom.X+int16(geom.Width) && ev.EventX > int16(geom.X) &&
-						ev.EventY < geom.Y+int16(geom.Height) && ev.EventY > int16(geom.Y) {
+					if window.id != ev.Child && ev.EventX < geom.X+int16(geom.Width) && ev.EventX > geom.X &&
+						ev.EventY < geom.Y+int16(geom.Height) && ev.EventY > geom.Y {
 						fmt.Println("MOVING", ev.Child, window.id)
 						swapWindowsId(&wm.currWorkspace.windowList, ev.Child, window.id)
 						wm.fitToLayout()
@@ -789,7 +787,6 @@ func (wm *WindowManager) Run() {
 			start.Child = 0
 			xproto.AllowEvents(wm.conn, xproto.AllowReplayPointer, xproto.TimeCurrentTime)
 		case xproto.MotionNotifyEvent:
-			ev := event.(xproto.MotionNotifyEvent)
 			// if we have the mouse down and we are holding the mod key, and if we are not tiling and the window is not
 			// full screen then do some simple maths to move and resize
 			focusWindow(wm.conn, ev.Child)
@@ -848,7 +845,6 @@ func (wm *WindowManager) Run() {
 			break
 		case xproto.DestroyNotifyEvent:
 			fmt.Println("DestroyNotify")
-			ev := event.(xproto.DestroyNotifyEvent)
 			fmt.Println("Window:")
 			fmt.Println(ev.Window)
 			fmt.Println("Event:")
@@ -862,20 +858,17 @@ func (wm *WindowManager) Run() {
 		case xproto.EnterNotifyEvent:
 			// when we enter the frame, change the border color
 			fmt.Println("EnterNotify")
-			ev := event.(xproto.EnterNotifyEvent)
 			fmt.Println(ev.Event)
 			wm.OnEnterNotify(event.(xproto.EnterNotifyEvent))
 			break
 		case xproto.LeaveNotifyEvent:
 			// when we leave the frame, change the border color
 			fmt.Println("LeaveNotify")
-			ev := event.(xproto.LeaveNotifyEvent)
 			fmt.Println(ev.Event)
 			wm.OnLeaveNotify(event.(xproto.LeaveNotifyEvent))
 			break
 		case xproto.KeyPressEvent:
 			fmt.Println("keyPress")
-			ev := event.(xproto.KeyPressEvent)
 			// if mod key is down
 			if ev.State&mMask != 0 {
 				// go through keybinds if the keybind matches up to the current event then continue
@@ -1187,9 +1180,8 @@ func (wm *WindowManager) Run() {
 
 		case xproto.ClientMessageEvent:
 			fmt.Println("client message")
-			ev := event.(xproto.ClientMessageEvent)
 
-			atomName, _ := xproto.GetAtomName(wm.conn, xproto.Atom(ev.Type)).Reply()
+			atomName, _ := xproto.GetAtomName(wm.conn, ev.Type).Reply()
 			fmt.Println("ClientMessage atom:", atomName.Name)
 
 			if atomName.Name == "_NET_CURRENT_DESKTOP" {
@@ -2479,7 +2471,7 @@ func (wm *WindowManager) Frame(w xproto.Window, createdBeforeWM bool) {
 		wm.conn,
 		w,
 		xproto.ConfigWindowBorderWidth,
-		[]uint32{uint32(BorderWidth)},
+		[]uint32{BorderWidth},
 	)
 
 	err = xproto.ChangeWindowAttributesChecked(
