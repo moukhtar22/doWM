@@ -406,7 +406,7 @@ func (wm *WindowManager) createKeybind(kb *Keybind) Keybind {
 	kb.Keycode = uint32(KeyCode)
 	Mask := wm.mod
 	if kb.Shift {
-		Mask = Mask | xproto.ModMaskShift
+		Mask |= xproto.ModMaskShift
 	}
 	err := xproto.GrabKeyChecked(wm.conn, true, wm.root, Mask, KeyCode, xproto.GrabModeAsync, xproto.GrabModeAsync).
 		Check()
@@ -1290,9 +1290,8 @@ func (wm *WindowManager) resizeTiledX(increase bool, ev xproto.KeyPressEvent) bo
 		wm.currWorkspace.resizedLayout = resizeLayout
 		wm.fitToLayout()
 		return true
-	} else {
-		return false
 	}
+	return false
 }
 
 func (wm *WindowManager) resizeTiledY(increase bool, ev xproto.KeyPressEvent) bool { //nolint:unparam
@@ -1384,7 +1383,7 @@ func (wm *WindowManager) declareSupportedAtoms() {
 		"_NET_WM_STATE_MAXIMIZED_VERT",
 	}
 
-	var atoms []xproto.Atom
+	atoms := make([]xproto.Atom, 0, len(atomNames))
 	for _, name := range atomNames {
 		atom, err := xproto.InternAtom(wm.conn, false, uint16(len(name)), name).Reply()
 		if err != nil {
@@ -1788,7 +1787,7 @@ func (wm *WindowManager) broadcastWorkspaceCount() {
 			otherCount = i
 		}
 	}
-	otherCount += 1
+	otherCount++
 	if otherCount > count {
 		count = otherCount
 	}
