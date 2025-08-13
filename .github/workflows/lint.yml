@@ -1,19 +1,17 @@
-name: Build
+name: Linting
 
 on:
   workflow_dispatch:
 
 jobs:
-
-  build:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Go
+      - name: setup go
         uses: actions/setup-go@v5
         with:
           go-version-file: ./go.mod
-      - name: Build
-        run: |
-          CGO_ENABLED=0 go build -v  . 
+      - name:  lint
+        uses: golangci/golangci-lint-action@v8
