@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/BurntSushi/xgb"
-	"github.com/BurntSushi/xgb/xproto"
-	"github.com/BurntSushi/xgbutil"
-	"github.com/BurntSushi/xgbutil/keybind"
+	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/xproto"
+	"github.com/jezek/xgbutil"
+	"github.com/jezek/xgbutil/keybind"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
@@ -739,16 +739,21 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 		case xproto.ButtonReleaseEvent:
 			// if we don't have the mouse down, we don't want to move or resize
 			if wm.tiling {
+				ev, ok := event.(xproto.ButtonReleaseEvent)
+				if !ok {
+					break
+				}
 				found := false
 				for _, window := range wm.currWorkspace.windowList {
 					geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(window.id)).Reply()
 					if err != nil {
 						continue
 					}
-					fmt.Println("id", window.id, "mouse X:", ev.EventX, "mouse Y:", ev.EventY, "win X:", geom.X, "win Y:", geom.Y,
-						"win width", geom.Width, "win height", geom.Height, "RELEASE")
-					if window.id != ev.Child && ev.EventX < geom.X+int16(geom.Width) && ev.EventX > geom.X &&
-						ev.EventY < geom.Y+int16(geom.Height) && ev.EventY > geom.Y {
+					if window.id != ev.Child &&
+						ev.EventX < geom.X+int16(geom.Width) &&
+						ev.EventX > geom.X &&
+						ev.EventY < geom.Y+int16(geom.Height) &&
+						ev.EventY > geom.Y {
 						fmt.Println("MOVING", ev.Child, window.id)
 						swapWindowsID(&wm.currWorkspace.windowList, ev.Child, window.id)
 						wm.fitToLayout()
@@ -2527,6 +2532,11 @@ func (wm *WindowManager) frame(w xproto.Window, createdBeforeWM bool) {
 }
 
 func (wm *WindowManager) onConfigureRequest(event xproto.ConfigureRequestEvent) {
+	if _, ok := wm.windows[event.Window]; ok {
+		if wm.tiling {
+			return
+		}
+	}
 	changes := createChanges(event)
 
 	fmt.Println(event.ValueMask)
