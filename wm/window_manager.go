@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/BurntSushi/xgb"
-	"github.com/BurntSushi/xgb/xproto"
-	"github.com/BurntSushi/xgbutil"
-	"github.com/BurntSushi/xgbutil/keybind"
+	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/xproto"
+	"github.com/jezek/xgbutil"
+	"github.com/jezek/xgbutil/keybind"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
@@ -2287,10 +2287,10 @@ func (wm *WindowManager) Frame(w xproto.Window, createdBeforeWM bool) {
 	topLeftY := screenMidY - windowMidY
 
 	err = xproto.ConfigureWindowChecked(wm.conn, w, xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowHeight, []uint32{
-			uint32(topLeftX),
-			uint32(topLeftY),
-			uint32(geometry.Width),
-			uint32(geometry.Height),
+		uint32(topLeftX),
+		uint32(topLeftY),
+		uint32(geometry.Width),
+		uint32(geometry.Height),
 	}).Check()
 
 	if err != nil {
@@ -2357,6 +2357,7 @@ func (wm *WindowManager) Frame(w xproto.Window, createdBeforeWM bool) {
 }
 
 func (wm *WindowManager) OnConfigureRequest(event xproto.ConfigureRequestEvent) {
+	if _, ok := wm.windows[event.Window] ; ok {if wm.tiling {return}}
 	changes := createChanges(event)
 
 	fmt.Println(event.ValueMask)
