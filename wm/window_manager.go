@@ -4,6 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/goccy/go-yaml"
+	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/xproto"
+	"github.com/jezek/xgbutil"
+	"github.com/jezek/xgbutil/keybind"
+	"github.com/mattn/go-shellwords"
 	"log/slog"
 	"math"
 	"os"
@@ -11,59 +17,48 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
-
-	"github.com/jezek/xgb"
-	"github.com/jezek/xgb/xproto"
-	"github.com/jezek/xgbutil"
-	"github.com/jezek/xgbutil/keybind"
-	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/file"
-	"github.com/knadh/koanf/v2"
-	"github.com/mattn/go-shellwords"
 )
 
 var (
 	XUtil *xgbutil.XUtil
 )
 
-// config
-var k = koanf.New(".")
-
 type Config struct {
 	// tiling window gaps, unfocused/focused window border colors, mod key for all wm actions, window border width, keybinds
-	Layouts        map[int][]Layout `koanf:"layouts"`
-	Gap            uint32           `koanf:"gaps"`
-	Resize         uint32           `koanf:"resize-amount"`
-	OuterGap       uint32           `koanf:"outer-gap"`
-	StartTiling    bool             `koanf:"default-tiling"`
-	BorderUnactive uint32           `koanf:"unactive-border-color"`
-	BorderActive   uint32           `koanf:"active-border-color"`
-	ModKey         string           `koanf:"mod-key"`
-	BorderWidth    uint32           `koanf:"border-width"`
-	Keybinds       []Keybind        `koanf:"keybinds"`
-	AutoFullscreen bool             `koanf:"auto-fullscreen"`
+	lyts           map[int][]Layout
+	Layouts        []map[int][]Layout `yaml:"layouts"`
+	Gap            uint32             `yaml:"gaps"`
+	Resize         uint32             `yaml:"resize-amount"`
+	OuterGap       uint32             `yaml:"outer-gap"`
+	StartTiling    bool               `yaml:"default-tiling"`
+	BorderUnactive uint32             `yaml:"unactive-border-color"`
+	BorderActive   uint32             `yaml:"active-border-color"`
+	ModKey         string             `yaml:"mod-key"`
+	BorderWidth    uint32             `yaml:"border-width"`
+	Keybinds       []Keybind          `yaml:"keybinds"`
+	AutoFullscreen bool               `yaml:"auto-fullscreen"`
 }
 
 type Keybind struct {
 	// keycode, the letter of the key, if shift should be pressed, command (can be empty), role in wm (can be empty)
 	Keycode uint32
-	Key     string `koanf:"key"`
-	Shift   bool   `koanf:"shift"`
-	Exec    string `koanf:"exec"`
-	Role    string `koanf:"role"`
+	Key     string `yaml:"key"`
+	Shift   bool   `yaml:"shift"`
+	Exec    string `yaml:"exec"`
+	Role    string `yaml:"role"`
 }
 
 // where a window is on a layout (dynamic by using percentages)
 type LayoutWindow struct {
-	WidthPercentage  float64 `koanf:"width"`
-	HeightPercentage float64 `koanf:"height"`
-	XPercentage      float64 `koanf:"x"`
-	YPercentage      float64 `koanf:"y"`
+	WidthPercentage  float64 `yaml:"width"`
+	HeightPercentage float64 `yaml:"height"`
+	XPercentage      float64 `yaml:"x"`
+	YPercentage      float64 `yaml:"y"`
 }
 
 // a tiling layout of windows
 type Layout struct {
-	Windows []LayoutWindow `koanf:"windows"`
+	Windows []LayoutWindow `yaml:"windows"`
 }
 
 type RLayoutWindow struct {
@@ -237,7 +232,7 @@ func createLayouts() map[int][]Layout {
 }
 
 // read and create config, if certain values, aren't provided, use the defualt values
-func createConfig(f koanf.Provider) Config {
+func createConfig() Config {
 	// Set defaults manually
 	cfg := Config{
 		Gap:            6,
@@ -247,19 +242,34 @@ func createConfig(f koanf.Provider) Config {
 		BorderUnactive: 0x8bd5ca,
 		BorderActive:   0xa6da95,
 		Keybinds:       []Keybind{},
-		Layouts:        createLayouts(),
+		lyts:           createLayouts(),
+		Layouts:        []map[int][]Layout{},
 		StartTiling:    false,
 		AutoFullscreen: false,
 	}
 
-	// Load the config file
-	if err := k.Load(f, yaml.Parser()); err == nil {
-		// Unmarshal — existing keys override the defaults
-		k.UnmarshalWithConf("", &cfg, koanf.UnmarshalConf{Tag: "koanf", FlatPaths: false})
+	home, _ := os.UserHomeDir()
+	f, err := os.ReadFile(filepath.Join(home, ".config", "doWM", "doWM.yml"))
+	if err != nil {
+		slog.Error("Couldn't read doWM.yml config file", "error:", err)
+		return cfg
+	}
 
-	} else {
-		slog.Warn("couldn't load config, using defaults")
-		exec.Command("notify-send", "'error in doWM config, using defaults'").Start()
+	if err := yaml.Unmarshal(f, &cfg); err != nil {
+		slog.Error("Couldn't parse doWM.yml config file", "error:", err)
+		return cfg
+	}
+
+	if len(cfg.Layouts) > 0 {
+		lyts := map[int][]Layout{}
+		for _, lyt := range cfg.Layouts {
+			for key, val := range lyt {
+				lyts[key] = val
+				break
+			}
+		}
+
+		cfg.lyts = lyts
 	}
 
 	fmt.Println(cfg.Layouts)
@@ -544,9 +554,7 @@ func (wm *WindowManager) Run() {
 	//wm.cursor()
 
 	// retrieve config and set values
-	home, _ := os.UserHomeDir()
-	f := file.Provider(filepath.Join(home, ".config", "doWM", "doWM.yml"))
-	cfg := createConfig(f)
+	cfg := createConfig()
 	wm.config = cfg
 	if wm.config.StartTiling {
 		wm.toggleTiling()
@@ -1042,8 +1050,7 @@ func (wm *WindowManager) Run() {
 								}
 							}
 						case "reload-config":
-							f = file.Provider(filepath.Join(home, ".config", "doWM", "doWM.yml"))
-							cfg := createConfig(f)
+							cfg := createConfig()
 							wm.config = cfg
 							wm.reload(start)
 							mMask = wm.mod
@@ -1053,7 +1060,7 @@ func (wm *WindowManager) Run() {
 							if windowNum < 1 {
 								break
 							}
-							totalLen := len(wm.config.Layouts[windowNum]) - 1
+							totalLen := len(wm.config.lyts[windowNum]) - 1
 							if wm.currWorkspace.layoutIndex == totalLen {
 								wm.currWorkspace.layoutIndex = 0
 							} else {
@@ -1513,21 +1520,21 @@ func (wm *WindowManager) fitToLayout() {
 
 	windowNum := len(wm.currWorkspace.windowList)
 
-	if _, ok := wm.config.Layouts[windowNum]; !ok {
+	if _, ok := wm.config.lyts[windowNum]; !ok {
 		return
 	}
 
-	if len(wm.config.Layouts[windowNum])-1 < wm.layoutIndex && len(wm.config.Layouts[windowNum]) > 0 {
+	if len(wm.config.lyts[windowNum])-1 < wm.layoutIndex && len(wm.config.lyts[windowNum]) > 0 {
 		wm.currWorkspace.layoutIndex = 0
 		wm.layoutIndex = 0
 	}
 
-	if windowNum > len(wm.config.Layouts) || windowNum < 1 || windowNum > len(wm.config.Layouts[windowNum][wm.layoutIndex].Windows) {
+	if windowNum > len(wm.config.lyts) || windowNum < 1 || windowNum > len(wm.config.lyts[windowNum][wm.layoutIndex].Windows) {
 		fmt.Println("too many or too few windows to fit to layout in workspace", wm.workspaceIndex+1)
 		return
 	}
 	wm.createTilingSpace()
-	layout := wm.config.Layouts[windowNum][wm.layoutIndex]
+	layout := wm.config.lyts[windowNum][wm.layoutIndex]
 	if wm.currWorkspace.resized && len(wm.currWorkspace.resizedLayout.Windows) != windowNum {
 		wm.currWorkspace.resized = false
 		wm.currWorkspace.resizedLayout = ResizeLayout{}
