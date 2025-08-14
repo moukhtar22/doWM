@@ -1284,6 +1284,10 @@ func (wm *WindowManager) resizeTiledX(increase bool, ev xproto.KeyPressEvent) bo
 			} else {
 				winX -= uint16(wm.config.Resize)
 				winW += uint16(wm.config.Resize)
+				if W < 50 {
+					ok = false
+					break
+				}
 			}
 		}
 
