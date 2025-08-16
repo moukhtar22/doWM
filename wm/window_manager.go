@@ -44,6 +44,7 @@ type Config struct {
 	Monitors       []MonitorConfig    `yaml:"monitors"`
 }
 
+// MonitorConfig is the position of monitors defined in the user config
 type MonitorConfig struct {
 	X int `yaml:"x"`
 	Y int `yaml:"y"`
@@ -108,6 +109,9 @@ type Workspace struct {
 	resizedLayout ResizeLayout
 }
 
+// Monitor is representing a monitor which effectively houses its own workspaces and windows etc. the monitor is
+// actually just a space in the root
+// window
 type Monitor struct {
 	X              int16
 	Y              int16
@@ -315,7 +319,7 @@ func Create() (*WindowManager, error) {
 	err = randr.Init(X)
 	if err != nil {
 		slog.Error("Couldn't init", "error:", err)
-		return nil, fmt.Errorf("couldn't use randr for monitors", err)
+		return nil, fmt.Errorf("couldn't use randr for monitors %w", err)
 	}
 
 	// get xgbutil connection aswell for keybinds
@@ -335,10 +339,9 @@ func Create() (*WindowManager, error) {
 	// Gets the current screen resources. Screen resources contains a list
 	// of names, crtcs, outputs and modes, among other things.
 	resources, err := randr.GetScreenResources(X, root).Reply()
-
 	if err != nil {
 		slog.Error("Couldn't get resources", "error:", err)
-		return nil, fmt.Errorf("Couldn't get resources %w", err)
+		return nil, fmt.Errorf("couldn't get resources %w", err)
 	}
 
 	monitors := []Monitor{}
@@ -592,7 +595,6 @@ func (wm *WindowManager) reload(focused xproto.ButtonPressEvent) {
 
 func (wm *WindowManager) positionMonitors() {
 	resources, err := randr.GetScreenResources(wm.conn, wm.root).Reply()
-
 	if err != nil {
 		slog.Error("Couldn't get resources", "error:", err)
 		return
@@ -637,7 +639,14 @@ func (wm *WindowManager) positionMonitors() {
 		heightsMM += int(info.MmHeight)
 	}
 
-	err = randr.SetScreenSizeChecked(wm.conn, wm.root, uint16(widths), uint16(heights), uint32(widthsMM), uint32(heightsMM)).Check()
+	err = randr.SetScreenSizeChecked(
+		wm.conn,
+		wm.root,
+		uint16(widths),
+		uint16(heights),
+		uint32(widthsMM),
+		uint32(heightsMM),
+	).Check()
 	if err != nil {
 		slog.Error("Couldnt set screen size", "error", err)
 	}
@@ -855,7 +864,8 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 		pointer, ptrerr := xproto.QueryPointer(wm.conn, wm.root).Reply()
 		if ptrerr == nil {
 			for i, mon := range wm.monitors {
-				if pointer.RootX >= mon.X && pointer.RootX <= mon.X+int16(mon.Width) && pointer.RootY >= mon.Y && pointer.RootY <= mon.Y+int16(mon.Height) {
+				if pointer.RootX >= mon.X && pointer.RootX <= mon.X+int16(mon.Width) && pointer.RootY >= mon.Y &&
+					pointer.RootY <= mon.Y+int16(mon.Height) {
 					wm.currMonitor = &wm.monitors[i]
 					wm.setNetClientList()
 					wm.setNetWorkArea()
@@ -948,7 +958,6 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 				if !found {
 					wm.fitToLayout()
 				}
-
 			}
 			start.Child = 0
 			xproto.AllowEvents(wm.conn, xproto.AllowReplayPointer, xproto.TimeCurrentTime)
@@ -2031,7 +2040,13 @@ func (wm *WindowManager) fullscreen(_ *Window, child xproto.Window) {
 		child,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|
 			xproto.ConfigWindowWidth|xproto.ConfigWindowHeight|xproto.ConfigWindowBorderWidth,
-		[]uint32{uint32(wm.currMonitor.X), uint32(wm.currMonitor.Y), uint32(wm.currMonitor.Width), uint32(wm.currMonitor.Height), 0},
+		[]uint32{
+			uint32(wm.currMonitor.X),
+			uint32(wm.currMonitor.Y),
+			uint32(wm.currMonitor.Width),
+			uint32(wm.currMonitor.Height),
+			0,
+		},
 	).Check()
 	if err != nil {
 		slog.Error("couldn't fullscreen window", "error:", err)
