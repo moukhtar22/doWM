@@ -600,14 +600,18 @@ func (wm *WindowManager) positionMonitors() {
 
 	count := 0
 	for i, crtc := range resources.Crtcs {
-		if len(wm.config.Monitors) == count {
-			break
-		}
-		X, Y := wm.config.Monitors[i].X, wm.config.Monitors[i].Y
 		info, err := randr.GetCrtcInfo(wm.conn, crtc, 0).Reply()
 		if err != nil {
 			continue
 		}
+		if info.Width == 0 || info.Height == 0 {
+			continue
+		}
+
+		if len(wm.config.Monitors) == count {
+			break
+		}
+		X, Y := wm.config.Monitors[i].X, wm.config.Monitors[i].Y
 
 		if info.Width == 0 || info.Height == 0 {
 			continue
