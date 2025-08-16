@@ -27,6 +27,17 @@ unactive-border-color: 0xf5a97f
 # border color for focused windows
 active-border-color: 0xed8796
 
+# define positions of monitors, 0 on the Y is the highest up and 0 on the X is the furthest to the left
+#
+# monitors:
+#   # highest and to the right
+#   - x: 960
+#     y: 0
+#
+#   # furthest to the left and below
+#   - x: 0
+#     y: 1080
+
 # Completely new layout system, you can have multiple layouts for different numbers of windows, if a layout isnt supported, it will just add a window ontop of the rest that are tiled to be moved somewhere else
 # layouts are specified like:
 # - <WINDOW_NUM>:

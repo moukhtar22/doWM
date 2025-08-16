@@ -16,6 +16,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/randr"
 	"github.com/jezek/xgb/xproto"
 	"github.com/jezek/xgbutil"
 	"github.com/jezek/xgbutil/keybind"
@@ -40,6 +41,12 @@ type Config struct {
 	BorderWidth    uint32             `yaml:"border-width"`
 	Keybinds       []Keybind          `yaml:"keybinds"`
 	AutoFullscreen bool               `yaml:"auto-fullscreen"`
+	Monitors       []MonitorConfig    `yaml:"monitors"`
+}
+
+type MonitorConfig struct {
+	X int `yaml:"x"`
+	Y int `yaml:"y"`
 }
 
 // Keybind represents a keybind: keycode, the letter of the key, if shift should be pressed,
@@ -101,23 +108,33 @@ type Workspace struct {
 	resizedLayout ResizeLayout
 }
 
+type Monitor struct {
+	X              int16
+	Y              int16
+	Width          uint16
+	Height         uint16
+	workspaceIndex int
+	Workspaces     []Workspace
+	CurrWorkspace  *Workspace
+	TilingSpace    Space
+	layoutIndex    int
+	tiling         bool
+	crtc           randr.Crtc
+}
+
 // WindowManager represents the connection, root window, width and height of screen, workspaces,
 // the current workspace index,the current workspace, atoms for EMWH, if the wm is tiling, the space for tiling
 // windows to be, the different tiling layouts, the wm condig, the mod key.
 type WindowManager struct {
-	conn           *xgb.Conn
-	root           xproto.Window
-	width, height  int
-	workspaces     []Workspace
-	workspaceIndex int
-	currWorkspace  *Workspace
-	atoms          map[string]xproto.Atom
-	tiling         bool
-	tilingspace    Space
-	config         Config
-	mod            uint16
-	windows        map[xproto.Window]*Window
-	layoutIndex    int
+	conn          *xgb.Conn
+	root          xproto.Window
+	atoms         map[string]xproto.Atom
+	monitors      []Monitor
+	currMonitor   *Monitor
+	config        Config
+	mod           uint16
+	windows       map[xproto.Window]*Window
+	crtcToMonitor map[randr.Crtc]*Monitor
 }
 
 func (wm *WindowManager) cursor() { //nolint:unused
@@ -255,6 +272,7 @@ func createConfig() Config {
 		Layouts:        []map[int][]Layout{},
 		StartTiling:    false,
 		AutoFullscreen: false,
+		Monitors:       []MonitorConfig{},
 	}
 
 	home, _ := os.UserHomeDir()
@@ -281,7 +299,6 @@ func createConfig() Config {
 		cfg.lyts = lyts
 	}
 
-	fmt.Println(cfg.Layouts)
 	return cfg
 }
 
@@ -292,6 +309,13 @@ func Create() (*WindowManager, error) {
 	if err != nil {
 		slog.Error("Couldn't open X display", "error", err)
 		return nil, fmt.Errorf("couldn't open X display %w", err)
+	}
+
+	// Every extension must be initialized before it can be used.
+	err = randr.Init(X)
+	if err != nil {
+		slog.Error("Couldn't init", "error:", err)
+		return nil, fmt.Errorf("couldn't use randr for monitors", err)
 	}
 
 	// get xgbutil connection aswell for keybinds
@@ -308,37 +332,84 @@ func Create() (*WindowManager, error) {
 
 	root := screen.Root
 
-	dimensions, err := xproto.GetGeometry(X, xproto.Drawable(root)).Reply()
+	// Gets the current screen resources. Screen resources contains a list
+	// of names, crtcs, outputs and modes, among other things.
+	resources, err := randr.GetScreenResources(X, root).Reply()
+
 	if err != nil {
-		return nil, fmt.Errorf("couldn't get screen dimensions: %w", err)
+		slog.Error("Couldn't get resources", "error:", err)
+		return nil, fmt.Errorf("Couldn't get resources %w", err)
 	}
 
-	// create workspaces
-	workspaces := make([]Workspace, 10)
-	for i := range workspaces {
-		workspaces[i] = Workspace{
-			windowList:    []*Window{},
-			tiling:        false,
-			detachTiling:  false,
-			layoutIndex:   0,
-			resized:       false,
-			resizedLayout: ResizeLayout{},
+	monitors := []Monitor{}
+	crtcToMonitor := map[randr.Crtc]*Monitor{}
+
+	for i, crtc := range resources.Crtcs {
+		info, err := randr.GetCrtcInfo(X, crtc, 0).Reply()
+		if err != nil {
+			slog.Error("Couldn't get Crtc monitor info :(", "error:", err)
+			break
 		}
+
+		// Skip disabled CRTCs
+		if info.Width == 0 || info.Height == 0 {
+			continue
+		}
+
+		monitors = append(monitors, Monitor{})
+		monitors[i].X = info.X
+		monitors[i].Y = info.Y
+		monitors[i].Width = info.Width
+		monitors[i].Height = info.Height
+		monitors[i].crtc = crtc
+		crtcToMonitor[crtc] = &monitors[i]
+		fmt.Println("X", info.X, "Y", info.Y, "Width", info.Width, "Height", info.Height, "crtc", crtc)
+	}
+
+	/*dimensions, err := xproto.GetGeometry(X, xproto.Drawable(root)).Reply()
+	if err != nil {
+		return nil, fmt.Errorf("couldn't get screen dimensions: %w", err)
+	}*/
+
+	for i := range monitors {
+		// create workspaces
+		workspaces := make([]Workspace, 10)
+		for i := range workspaces {
+			workspaces[i] = Workspace{
+				windowList:    []*Window{},
+				tiling:        false,
+				detachTiling:  false,
+				layoutIndex:   0,
+				resized:       false,
+				resizedLayout: ResizeLayout{},
+			}
+		}
+		monitors[i].Workspaces = workspaces
+		monitors[i].workspaceIndex = 0
+		monitors[i].CurrWorkspace = &workspaces[0]
+		monitors[i].layoutIndex = 0
+		monitors[i].tiling = false
+	}
+
+	// Tell RandR to send us events. (I think these are all of them, as of 1.3.)
+	err = randr.SelectInputChecked(X, root,
+		randr.NotifyMaskScreenChange|
+			randr.NotifyMaskCrtcChange|
+			randr.NotifyMaskOutputChange|
+			randr.NotifyMaskOutputProperty).Check()
+	if err != nil {
+		slog.Error("Can't get notified from randr", "error:", err)
 	}
 
 	// return the window manager struct
 	return &WindowManager{
-		conn:           X,
-		root:           root,
-		width:          int(dimensions.Width),
-		height:         int(dimensions.Height),
-		workspaces:     workspaces,
-		currWorkspace:  &workspaces[0],
-		workspaceIndex: 0,
-		atoms:          map[string]xproto.Atom{},
-		tiling:         false,
-		windows:        map[xproto.Window]*Window{},
-		layoutIndex:    0,
+		conn:          X,
+		root:          root,
+		monitors:      monitors,
+		currMonitor:   &monitors[0],
+		atoms:         map[string]xproto.Atom{},
+		windows:       map[xproto.Window]*Window{},
+		crtcToMonitor: crtcToMonitor,
 	}, nil
 }
 
@@ -519,6 +590,55 @@ func (wm *WindowManager) reload(focused xproto.ButtonPressEvent) {
 	wm.fitToLayout()
 }
 
+func (wm *WindowManager) positionMonitors() {
+	resources, err := randr.GetScreenResources(wm.conn, wm.root).Reply()
+
+	if err != nil {
+		slog.Error("Couldn't get resources", "error:", err)
+		return
+	}
+
+	count := 0
+	for i, crtc := range resources.Crtcs {
+		if len(wm.config.Monitors) == count {
+			break
+		}
+		X, Y := wm.config.Monitors[i].X, wm.config.Monitors[i].Y
+		info, err := randr.GetCrtcInfo(wm.conn, crtc, 0).Reply()
+		if err != nil {
+			continue
+		}
+
+		if info.Width == 0 || info.Height == 0 {
+			continue
+		}
+		randr.SetCrtcConfig(wm.conn, crtc, 0, 0, int16(X), int16(Y), info.Mode, info.Rotation, info.Outputs)
+		wm.monitors[count].X = int16(X)
+		wm.monitors[count].Y = int16(Y)
+		count++
+	}
+
+	widths := 0
+	heights := 0
+	for _, mon := range wm.monitors {
+		widths += int(mon.Width)
+		heights += int(mon.Height)
+	}
+
+	widthsMM := 0
+	heightsMM := 0
+	for _, out := range resources.Outputs {
+		info, _ := randr.GetOutputInfo(wm.conn, out, 0).Reply()
+		widthsMM += int(info.MmWidth)
+		heightsMM += int(info.MmHeight)
+	}
+
+	err = randr.SetScreenSizeChecked(wm.conn, wm.root, uint16(widths), uint16(heights), uint32(widthsMM), uint32(heightsMM)).Check()
+	if err != nil {
+		slog.Error("Couldnt set screen size", "error", err)
+	}
+}
+
 func (wm *WindowManager) pointerToWindow(window xproto.Window) error {
 	geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(window)).Reply()
 	if err != nil {
@@ -575,9 +695,17 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 	// retrieve config and set values
 	cfg := createConfig()
 	wm.config = cfg
+	if len(wm.config.Monitors) != 0 {
+		wm.positionMonitors()
+	}
 	if wm.config.StartTiling {
-		wm.toggleTiling()
-		wm.fitToLayout()
+		cm := wm.currMonitor
+		for i := range wm.monitors {
+			wm.currMonitor = &wm.monitors[i]
+			wm.toggleTiling()
+			wm.fitToLayout()
+		}
+		wm.currMonitor = cm
 	}
 	// TODO: make auto-reload
 
@@ -719,7 +847,19 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 		if event == nil {
 			continue
 		}
-		if len(wm.currWorkspace.windowList) == 0 {
+
+		pointer, ptrerr := xproto.QueryPointer(wm.conn, wm.root).Reply()
+		if ptrerr == nil {
+			for i, mon := range wm.monitors {
+				if pointer.RootX >= mon.X && pointer.RootX <= mon.X+int16(mon.Width) && pointer.RootY >= mon.Y && pointer.RootY <= mon.Y+int16(mon.Height) {
+					wm.currMonitor = &wm.monitors[i]
+					wm.setNetClientList()
+					wm.setNetWorkArea()
+				}
+			}
+		}
+
+		if len(wm.currMonitor.CurrWorkspace.windowList) == 0 {
 			err := xproto.SetInputFocusChecked(wm.conn, xproto.InputFocusPointerRoot, wm.root, xproto.TimeCurrentTime).
 				Check()
 			if err != nil {
@@ -727,6 +867,9 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 			}
 		}
 		switch ev := event.(type) {
+		case randr.NotifyEvent:
+			fmt.Println("RANDR NOTIFY", ev)
+
 		case xproto.ButtonPressEvent:
 			// set values on current window, used later with moving and resizing
 			if ev.Child != 0 && ev.State&mMask != 0 {
@@ -744,14 +887,44 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 				xproto.AllowEvents(wm.conn, xproto.AllowReplayPointer, xproto.TimeCurrentTime)
 			}
 		case xproto.ButtonReleaseEvent:
+			ev, ok := event.(xproto.ButtonReleaseEvent)
+			if !ok {
+				break
+			}
+
 			// if we don't have the mouse down, we don't want to move or resize
-			if wm.tiling {
-				ev, ok := event.(xproto.ButtonReleaseEvent)
-				if !ok {
-					break
+
+			var startmon *Monitor
+			var endmon *Monitor
+			for _, mon := range wm.monitors {
+				if start.RootX >= mon.X && start.RootX <= mon.X+int16(mon.Width) && start.RootY >= mon.Y && start.RootY <= mon.Y+int16(mon.Height) {
+					startmon = &mon
 				}
+				if ev.RootX >= mon.X && ev.RootX <= mon.X+int16(mon.Width) && ev.RootY >= mon.Y && ev.RootY <= mon.Y+int16(mon.Height) {
+					endmon = &mon
+				}
+			}
+
+			if startmon != endmon {
+				orx := wm.windows[ev.Child].X - int(startmon.X)
+				ory := wm.windows[ev.Child].Y - int(startmon.Y)
+				wm.currMonitor.CurrWorkspace.windowList = append(wm.currMonitor.CurrWorkspace.windowList, &Window{
+					id:     ev.Child,
+					X:      int(endmon.X) + orx,
+					Y:      int(endmon.Y) + ory,
+					Width:  wm.windows[ev.Child].Width,
+					Height: wm.windows[ev.Child].Height,
+					Client: ev.Child,
+				})
+				remove(&startmon.CurrWorkspace.windowList, ev.Child)
+				wm.currMonitor = startmon
+				wm.fitToLayout()
+				wm.currMonitor = endmon
+				wm.fitToLayout()
+			}
+			if wm.currMonitor.tiling {
 				found := false
-				for _, window := range wm.currWorkspace.windowList {
+				for _, window := range wm.currMonitor.CurrWorkspace.windowList {
 					geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(window.id)).Reply()
 					if err != nil {
 						continue
@@ -762,7 +935,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 						ev.EventY < geom.Y+int16(geom.Height) &&
 						ev.EventY > geom.Y {
 						fmt.Println("MOVING", ev.Child, window.id)
-						swapWindowsID(&wm.currWorkspace.windowList, ev.Child, window.id)
+						swapWindowsID(&wm.currMonitor.CurrWorkspace.windowList, ev.Child, window.id)
 						wm.fitToLayout()
 						found = true
 						break
@@ -771,12 +944,21 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 				if !found {
 					wm.fitToLayout()
 				}
+
 			}
 			start.Child = 0
 			xproto.AllowEvents(wm.conn, xproto.AllowReplayPointer, xproto.TimeCurrentTime)
 		case xproto.MotionNotifyEvent:
 			// if we have the mouse down and we are holding the mod key, and if we are not tiling and the window is not
 			// full screen then do some simple maths to move and resize
+
+			fmt.Println("X:", ev.RootX, "Y:", ev.RootY)
+			for _, mon := range wm.monitors {
+				if ev.RootX >= mon.X && ev.RootX <= mon.X+int16(mon.Width) && ev.RootY >= mon.Y && ev.RootY <= mon.Y+int16(mon.Height) {
+					wm.currMonitor = &mon
+				}
+			}
+
 			focusWindow(wm.conn, ev.Child)
 			if start.Child != 0 && ev.State&mMask != 0 {
 				if wm.windows[start.Child] != nil && wm.windows[start.Child].Fullscreen {
@@ -791,7 +973,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 				fmt.Println("start detail")
 				fmt.Println(start.Detail)
 				if start.Detail == xproto.ButtonIndex3 {
-					if wm.currWorkspace.tiling {
+					if wm.currMonitor.CurrWorkspace.tiling {
 						break
 					}
 					Xoffset = attr.X
@@ -861,7 +1043,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 						}
 						switch kb.Role {
 						case "resize-x-scale-up":
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								if err := wm.pointerToWindow(ev.Child); err != nil {
 									slog.Error("couldn't move pointer to window", "error:", err)
 								}
@@ -880,7 +1062,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 								}
 							}
 						case "resize-x-scale-down":
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								if err := wm.pointerToWindow(ev.Child); err != nil {
 									slog.Error("couldn't move pointer to window", "error:", err)
 								}
@@ -901,7 +1083,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 								}
 							}
 						case "resize-y-scale-up":
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								if err := wm.pointerToWindow(ev.Child); err != nil {
 									slog.Error("couldn't move pointer to window", "error:", err)
 								}
@@ -920,7 +1102,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 								}
 							}
 						case "resize-y-scale-down":
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								if err := wm.pointerToWindow(ev.Child); err != nil {
 									slog.Error("couldn't move pointer to window", "error:", err)
 								}
@@ -928,7 +1110,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 									break
 								}
 							} else {
-								if wm.currWorkspace.tiling {
+								if wm.currMonitor.CurrWorkspace.tiling {
 									break
 								}
 								geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
@@ -944,7 +1126,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 								}
 							}
 						case "move-x-right":
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								break
 							}
 							geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
@@ -956,7 +1138,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 								slog.Error("couldn't move pointer to window", "error:", err)
 							}
 						case "move-x-left":
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								break
 							}
 							geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
@@ -968,7 +1150,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 								slog.Error("couldn't move pointer to window", "error:", err)
 							}
 						case "move-y-up":
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								break
 							}
 							geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
@@ -980,7 +1162,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 								slog.Error("couldn't move pointer to window", "error:", err)
 							}
 						case "move-y-down":
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								break
 							}
 							geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(ev.Child)).Reply()
@@ -1008,30 +1190,30 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 						case "toggle-tiling":
 							wm.toggleTiling()
 						case "detach-tiling":
-							if wm.currWorkspace.detachTiling {
-								wm.currWorkspace.detachTiling = false
-								if wm.tiling && !wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.detachTiling {
+								wm.currMonitor.CurrWorkspace.detachTiling = false
+								if wm.currMonitor.tiling && !wm.currMonitor.CurrWorkspace.tiling {
 									wm.enableTiling()
-								} else if !wm.tiling && wm.currWorkspace.tiling {
+								} else if !wm.currMonitor.tiling && wm.currMonitor.CurrWorkspace.tiling {
 									wm.disableTiling()
 								}
 							} else {
-								wm.currWorkspace.detachTiling = true
+								wm.currMonitor.CurrWorkspace.detachTiling = true
 							}
 							wm.fitToLayout()
 						case "toggle-fullscreen":
 							wm.toggleFullScreen(ev.Child)
 						case "swap-window-left":
 							fmt.Println("swap left")
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								currWindow := ev.Child
 							swapLeft:
-								for i := range wm.currWorkspace.windowList {
-									if currWindow == wm.currWorkspace.windowList[i].id {
+								for i := range wm.currMonitor.CurrWorkspace.windowList {
+									if currWindow == wm.currMonitor.CurrWorkspace.windowList[i].id {
 										if i == 0 {
-											swapWindows(&wm.currWorkspace.windowList, i, len(wm.currWorkspace.windowList)-1)
+											swapWindows(&wm.currMonitor.CurrWorkspace.windowList, i, len(wm.currMonitor.CurrWorkspace.windowList)-1)
 										} else {
-											swapWindows(&wm.currWorkspace.windowList, i, i-1)
+											swapWindows(&wm.currMonitor.CurrWorkspace.windowList, i, i-1)
 										}
 										wm.fitToLayout()
 										if err := wm.pointerToWindow(currWindow); err != nil {
@@ -1043,15 +1225,15 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 							}
 						case "swap-window-right":
 							fmt.Println("swap right")
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								currWindow := ev.Child
 							swapRight:
-								for i := range wm.currWorkspace.windowList {
-									if currWindow == wm.currWorkspace.windowList[i].id {
-										if i == len(wm.currWorkspace.windowList)-1 {
-											swapWindows(&wm.currWorkspace.windowList, i, 0)
+								for i := range wm.currMonitor.CurrWorkspace.windowList {
+									if currWindow == wm.currMonitor.CurrWorkspace.windowList[i].id {
+										if i == len(wm.currMonitor.CurrWorkspace.windowList)-1 {
+											swapWindows(&wm.currMonitor.CurrWorkspace.windowList, i, 0)
 										} else {
-											swapWindows(&wm.currWorkspace.windowList, i, i+1)
+											swapWindows(&wm.currMonitor.CurrWorkspace.windowList, i, i+1)
 										}
 										wm.fitToLayout()
 										if err := wm.pointerToWindow(currWindow); err != nil {
@@ -1062,17 +1244,17 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 								}
 							}
 						case "focus-window-right":
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								currWindow := ev.Child
 							focusRight:
-								for i := range wm.currWorkspace.windowList {
-									if currWindow == wm.currWorkspace.windowList[i].id {
-										if i == len(wm.currWorkspace.windowList)-1 {
-											if err := wm.pointerToWindow(wm.currWorkspace.windowList[0].id); err != nil {
+								for i := range wm.currMonitor.CurrWorkspace.windowList {
+									if currWindow == wm.currMonitor.CurrWorkspace.windowList[i].id {
+										if i == len(wm.currMonitor.CurrWorkspace.windowList)-1 {
+											if err := wm.pointerToWindow(wm.currMonitor.CurrWorkspace.windowList[0].id); err != nil {
 												slog.Error("couldn't move pointer to window", "error:", err)
 											}
 										} else {
-											if err := wm.pointerToWindow(wm.currWorkspace.windowList[i+1].id); err != nil {
+											if err := wm.pointerToWindow(wm.currMonitor.CurrWorkspace.windowList[i+1].id); err != nil {
 												slog.Error("couldn't move pointer to window", "error:", err)
 											}
 										}
@@ -1081,18 +1263,18 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 								}
 							}
 						case "focus-window-left":
-							if wm.currWorkspace.tiling {
+							if wm.currMonitor.CurrWorkspace.tiling {
 								currWindow := ev.Child
 							focusLeft:
-								for i := range wm.currWorkspace.windowList {
-									if currWindow == wm.currWorkspace.windowList[i].id {
+								for i := range wm.currMonitor.CurrWorkspace.windowList {
+									if currWindow == wm.currMonitor.CurrWorkspace.windowList[i].id {
 										if i == 0 {
-											err := wm.pointerToWindow(wm.currWorkspace.windowList[len(wm.currWorkspace.windowList)-1].id)
+											err := wm.pointerToWindow(wm.currMonitor.CurrWorkspace.windowList[len(wm.currMonitor.CurrWorkspace.windowList)-1].id)
 											if err != nil {
 												slog.Error("couldn't move pointer to window", "error:", err)
 											}
 										} else {
-											if err := wm.pointerToWindow(wm.currWorkspace.windowList[i-1].id); err != nil {
+											if err := wm.pointerToWindow(wm.currMonitor.CurrWorkspace.windowList[i-1].id); err != nil {
 												slog.Error("couldn't move pointer to window", "error:", err)
 											}
 										}
@@ -1103,23 +1285,26 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 						case "reload-config":
 							cfg := createConfig()
 							wm.config = cfg
+							if len(wm.config.Monitors) != 0 {
+								wm.positionMonitors()
+							}
 							wm.reload(start)
 							mMask = wm.mod
 
 						case "next-layout":
-							windowNum := len(wm.currWorkspace.windowList)
+							windowNum := len(wm.currMonitor.CurrWorkspace.windowList)
 							if windowNum < 1 {
 								break
 							}
 							totalLen := len(wm.config.lyts[windowNum]) - 1
-							if wm.currWorkspace.layoutIndex == totalLen {
-								wm.currWorkspace.layoutIndex = 0
+							if wm.currMonitor.CurrWorkspace.layoutIndex == totalLen {
+								wm.currMonitor.CurrWorkspace.layoutIndex = 0
 							} else {
-								wm.currWorkspace.layoutIndex++
+								wm.currMonitor.CurrWorkspace.layoutIndex++
 							}
-							wm.layoutIndex = wm.currWorkspace.layoutIndex
-							wm.currWorkspace.resized = false
-							wm.currWorkspace.resizedLayout = ResizeLayout{}
+							wm.currMonitor.layoutIndex = wm.currMonitor.CurrWorkspace.layoutIndex
+							wm.currMonitor.CurrWorkspace.resized = false
+							wm.currMonitor.CurrWorkspace.resizedLayout = ResizeLayout{}
 							wm.fitToLayout()
 						case "increase-gap":
 							wm.config.Gap++
@@ -1150,7 +1335,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 										xproto.ConfigWindowStackMode,
 										[]uint32{xproto.StackModeAbove},
 									)
-									remove(&wm.currWorkspace.windowList, w)
+									remove(&wm.currMonitor.CurrWorkspace.windowList, w)
 								}
 							}
 							switch kb.Key {
@@ -1176,8 +1361,8 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 								wm.switchWorkspace(9)
 							}
 							if kb.Shift && shiftok {
-								wm.currWorkspace.windowList = append(wm.currWorkspace.windowList, &window)
-								wm.setWindowDesktop(w, uint32(wm.workspaceIndex))
+								wm.currMonitor.CurrWorkspace.windowList = append(wm.currMonitor.CurrWorkspace.windowList, &window)
+								wm.setWindowDesktop(w, uint32(wm.currMonitor.workspaceIndex))
 							}
 							wm.fitToLayout()
 						}
@@ -1248,21 +1433,21 @@ func (wm *WindowManager) resizeTiledX(increase bool, ev xproto.KeyPressEvent) bo
 	if err != nil {
 		return false
 	}
-	X := uint16(geom.X - int16(wm.config.Gap) - int16(wm.tilingspace.X))
+	X := uint16(geom.X - int16(wm.config.Gap) - int16(wm.currMonitor.TilingSpace.X))
 	W := geom.Width + uint16(wm.config.Gap*2)
-	if math.Abs(float64(uint16(wm.tilingspace.X+wm.tilingspace.Width)-(X+W))) <= 10 {
+	if math.Abs(float64(uint16(wm.currMonitor.TilingSpace.X+wm.currMonitor.TilingSpace.Width)-(X+W))) <= 10 {
 		return false
 	}
 
 	var resizeLayout ResizeLayout
 	ok := true
-	for _, win := range wm.currWorkspace.windowList {
+	for _, win := range wm.currMonitor.CurrWorkspace.windowList {
 		geomwin, err := xproto.GetGeometry(wm.conn, xproto.Drawable(win.id)).Reply()
 		if err != nil {
 			continue
 		}
-		winX := uint16(geomwin.X - int16(wm.config.Gap) - int16(wm.tilingspace.X))
-		winY := uint16(geomwin.Y - int16(wm.config.Gap) - int16(wm.tilingspace.Y))
+		winX := uint16(geomwin.X - int16(wm.config.Gap) - int16(wm.currMonitor.TilingSpace.X))
+		winY := uint16(geomwin.Y - int16(wm.config.Gap) - int16(wm.currMonitor.TilingSpace.Y))
 		winH := geomwin.Height + uint16(wm.config.Gap*2)
 		winW := geomwin.Width + uint16(wm.config.Gap*2)
 		// if diff between ends of windows it less than five, they are same column
@@ -1301,8 +1486,8 @@ func (wm *WindowManager) resizeTiledX(increase bool, ev xproto.KeyPressEvent) bo
 	}
 
 	if ok {
-		wm.currWorkspace.resized = true
-		wm.currWorkspace.resizedLayout = resizeLayout
+		wm.currMonitor.CurrWorkspace.resized = true
+		wm.currMonitor.CurrWorkspace.resizedLayout = resizeLayout
 		wm.fitToLayout()
 		return true
 	}
@@ -1314,21 +1499,21 @@ func (wm *WindowManager) resizeTiledY(increase bool, ev xproto.KeyPressEvent) bo
 	if err != nil {
 		return false
 	}
-	Y := uint16(geom.Y - int16(wm.config.Gap) - int16(wm.tilingspace.Y))
+	Y := uint16(geom.Y - int16(wm.config.Gap) - int16(wm.currMonitor.TilingSpace.Y))
 	H := geom.Height + uint16(wm.config.Gap*2)
-	if math.Abs(float64(uint16(wm.tilingspace.X+wm.tilingspace.Height)-(Y+H))) <= 10 {
+	if math.Abs(float64(uint16(wm.currMonitor.TilingSpace.X+wm.currMonitor.TilingSpace.Height)-(Y+H))) <= 10 {
 		return false
 	}
 
 	var resizeLayout ResizeLayout
 	ok := true
-	for _, win := range wm.currWorkspace.windowList {
+	for _, win := range wm.currMonitor.CurrWorkspace.windowList {
 		geomwin, err := xproto.GetGeometry(wm.conn, xproto.Drawable(win.id)).Reply()
 		if err != nil {
 			continue
 		}
-		winX := uint16(geomwin.X - int16(wm.config.Gap) - int16(wm.tilingspace.X))
-		winY := uint16(geomwin.Y - int16(wm.config.Gap) - int16(wm.tilingspace.Y))
+		winX := uint16(geomwin.X - int16(wm.config.Gap) - int16(wm.currMonitor.TilingSpace.X))
+		winY := uint16(geomwin.Y - int16(wm.config.Gap) - int16(wm.currMonitor.TilingSpace.Y))
 		winH := geomwin.Height + uint16(wm.config.Gap*2)
 		winW := geomwin.Width + uint16(wm.config.Gap*2)
 		// if diff between ends of windows it less than five, they are same column
@@ -1367,8 +1552,8 @@ func (wm *WindowManager) resizeTiledY(increase bool, ev xproto.KeyPressEvent) bo
 	}
 
 	if ok {
-		wm.currWorkspace.resized = true
-		wm.currWorkspace.resizedLayout = resizeLayout
+		wm.currMonitor.CurrWorkspace.resized = true
+		wm.currMonitor.CurrWorkspace.resizedLayout = resizeLayout
 		wm.fitToLayout()
 		return true
 	}
@@ -1525,10 +1710,21 @@ func (wm *WindowManager) createTilingSpace() {
 	windows, _ := xproto.QueryTree(wm.conn, wm.root).Reply()
 	X := 0
 	Y := 0
-	width := wm.width
-	height := wm.height
+	width := wm.currMonitor.Width
+	height := wm.currMonitor.Height
+	fmt.Println("CURR MON VALS X", wm.currMonitor.X, "Y", wm.currMonitor.Y)
 
 	for _, window := range windows.Children {
+		geom, err := xproto.GetGeometry(wm.conn, xproto.Drawable(window)).Reply()
+		if err != nil {
+			continue
+		}
+
+		mon := wm.currMonitor
+		if geom.X < mon.X || geom.X > mon.X+int16(mon.Width) || geom.Y < mon.Y || geom.Y > mon.Y+int16(mon.Height) {
+			continue
+		}
+
 		attributes, err := xproto.GetWindowAttributes(wm.conn, window).Reply()
 		if err != nil {
 			continue
@@ -1551,8 +1747,8 @@ func (wm *WindowManager) createTilingSpace() {
 			// create space to work around bar (if there is one)
 			X = left
 			Y = top
-			width = wm.width - left - right
-			height = wm.height - top - bottom
+			width = uint16(int(wm.currMonitor.Width) - left - right)
+			height = uint16(int(wm.currMonitor.Height) - top - bottom)
 
 			// TODO: support multiple bars
 			break
@@ -1560,62 +1756,62 @@ func (wm *WindowManager) createTilingSpace() {
 	}
 
 	fmt.Println("tiling container:", "X:", X, "Y:", Y, "Width:", width, "Height:", height)
-	wm.tilingspace = Space{
-		X:      X + int(wm.config.OuterGap),
-		Y:      Y + int(wm.config.OuterGap),
-		Width:  (width - 6) - (int(wm.config.OuterGap) * 2),
-		Height: (height - 6) - (int(wm.config.OuterGap) * 2),
+	wm.currMonitor.TilingSpace = Space{
+		X:      int(wm.currMonitor.X) + X + int(wm.config.OuterGap),
+		Y:      int(wm.currMonitor.Y) + Y + int(wm.config.OuterGap),
+		Width:  int(width-6) - (int(wm.config.OuterGap) * 2),
+		Height: int(height-6) - (int(wm.config.OuterGap) * 2),
 	}
 }
 
 func (wm *WindowManager) fitToLayout() {
-	if !wm.currWorkspace.tiling {
+	if !wm.currMonitor.CurrWorkspace.tiling {
 		return
 	}
 	// if there are more than 4 windows then just don't do it
 
-	windowNum := len(wm.currWorkspace.windowList)
+	windowNum := len(wm.currMonitor.CurrWorkspace.windowList)
 
 	if _, ok := wm.config.lyts[windowNum]; !ok {
 		return
 	}
 
-	if len(wm.config.lyts[windowNum])-1 < wm.layoutIndex &&
+	if len(wm.config.lyts[windowNum])-1 < wm.currMonitor.layoutIndex &&
 		len(wm.config.lyts[windowNum]) > 0 {
-		wm.currWorkspace.layoutIndex = 0
-		wm.layoutIndex = 0
+		wm.currMonitor.CurrWorkspace.layoutIndex = 0
+		wm.currMonitor.layoutIndex = 0
 	}
 
 	if windowNum > len(wm.config.lyts) || windowNum < 1 ||
-		windowNum > len(wm.config.lyts[windowNum][wm.layoutIndex].Windows) {
+		windowNum > len(wm.config.lyts[windowNum][wm.currMonitor.layoutIndex].Windows) {
 		fmt.Println(
 			"too many or too few windows to fit to layout in workspace",
-			wm.workspaceIndex+1,
+			wm.currMonitor.workspaceIndex+1,
 		)
 		return
 	}
 	wm.createTilingSpace()
-	layout := wm.config.lyts[windowNum][wm.layoutIndex]
-	if wm.currWorkspace.resized && len(wm.currWorkspace.resizedLayout.Windows) != windowNum {
-		wm.currWorkspace.resized = false
-		wm.currWorkspace.resizedLayout = ResizeLayout{}
+	layout := wm.config.lyts[windowNum][wm.currMonitor.layoutIndex]
+	if wm.currMonitor.CurrWorkspace.resized && len(wm.currMonitor.CurrWorkspace.resizedLayout.Windows) != windowNum {
+		wm.currMonitor.CurrWorkspace.resized = false
+		wm.currMonitor.CurrWorkspace.resizedLayout = ResizeLayout{}
 	}
 	fmt.Println("fit to layout")
-	fmt.Println(wm.currWorkspace.windowList)
-	// fmt.Println(wm.currWorkspace.windows)
-	// fmt.Println(len(wm.currWorkspace.windows))
+	fmt.Println(wm.currMonitor.CurrWorkspace.windowList)
+	// fmt.Println(wm.currMonitor.CurrWorkspace.windows)
+	// fmt.Println(len(wm.currMonitor.CurrWorkspace.windows))
 	// for each window put it in its place and size specified by that layout
 	fullscreen := []xproto.Window{}
-	for i, WindowData := range wm.currWorkspace.windowList {
+	for i, WindowData := range wm.currMonitor.CurrWorkspace.windowList {
 		fmt.Println(WindowData)
 		if WindowData.Fullscreen {
 			fullscreen = append(fullscreen, WindowData.id)
 			continue
 		}
-		if wm.currWorkspace.resized {
-			layoutWindow := wm.currWorkspace.resizedLayout.Windows[i]
-			X := uint32(layoutWindow.X) + wm.config.Gap + uint32(wm.tilingspace.X)
-			Y := uint32(layoutWindow.Y) + wm.config.Gap + uint32(wm.tilingspace.Y)
+		if wm.currMonitor.CurrWorkspace.resized {
+			layoutWindow := wm.currMonitor.CurrWorkspace.resizedLayout.Windows[i]
+			X := uint32(layoutWindow.X) + wm.config.Gap + uint32(wm.currMonitor.TilingSpace.X)
+			Y := uint32(layoutWindow.Y) + wm.config.Gap + uint32(wm.currMonitor.TilingSpace.Y)
 			Width := uint32(layoutWindow.Width) - (wm.config.Gap * 2)
 			Height := uint32(layoutWindow.Height) - (wm.config.Gap * 2)
 			fmt.Println(
@@ -1635,12 +1831,11 @@ func (wm *WindowManager) fitToLayout() {
 		} else {
 			layoutWindow := layout.Windows[i]
 			// because we use percentages we have to times the width and height of the tiling space to get the raw
-			// value, it is simple maths to do the gap, I shouldn't have to explain it (since I am 12 I would expect u
-			// to know XD)
-			X := wm.tilingspace.X + int((float64(wm.tilingspace.Width) * layoutWindow.XPercentage)) + int(wm.config.Gap)
-			Y := wm.tilingspace.Y + int((float64(wm.tilingspace.Height) * layoutWindow.YPercentage)) + int(wm.config.Gap)
-			Width := (float64(wm.tilingspace.Width) * layoutWindow.WidthPercentage) - float64(wm.config.Gap*2)
-			Height := (float64(wm.tilingspace.Height) * layoutWindow.HeightPercentage) - float64(wm.config.Gap*2)
+			// value, it is simple maths to do the gap, I shouldn't have to explain it
+			X := wm.currMonitor.TilingSpace.X + int((float64(wm.currMonitor.TilingSpace.Width) * layoutWindow.XPercentage)) + int(wm.config.Gap)
+			Y := wm.currMonitor.TilingSpace.Y + int((float64(wm.currMonitor.TilingSpace.Height) * layoutWindow.YPercentage)) + int(wm.config.Gap)
+			Width := (float64(wm.currMonitor.TilingSpace.Width) * layoutWindow.WidthPercentage) - float64(wm.config.Gap*2)
+			Height := (float64(wm.currMonitor.TilingSpace.Height) * layoutWindow.HeightPercentage) - float64(wm.config.Gap*2)
 			fmt.Println("window:", WindowData.id, "X:", X, "rounded:", int(math.Round(Width)),
 				"Y:", Y, "Width:", Width, "Height:", Height)
 			wm.configureWindow(WindowData.id, X, Y, int(math.Round(Width)), int(math.Round(Height)))
@@ -1673,16 +1868,16 @@ func (wm *WindowManager) configureWindow(frame xproto.Window, x, y, width, heigh
 }
 
 func (wm *WindowManager) toggleTiling() {
-	if !wm.currWorkspace.detachTiling {
-		if !wm.tiling {
-			wm.tiling = true
+	if !wm.currMonitor.CurrWorkspace.detachTiling {
+		if !wm.currMonitor.tiling {
+			wm.currMonitor.tiling = true
 			wm.enableTiling()
 		} else {
-			wm.tiling = false
+			wm.currMonitor.tiling = false
 			wm.disableTiling()
 		}
 	} else {
-		if !wm.currWorkspace.tiling {
+		if !wm.currMonitor.CurrWorkspace.tiling {
 			wm.enableTiling()
 		} else {
 			wm.disableTiling()
@@ -1691,23 +1886,23 @@ func (wm *WindowManager) toggleTiling() {
 }
 
 func (wm *WindowManager) disableTiling() {
-	wm.currWorkspace.tiling = false
+	wm.currMonitor.CurrWorkspace.tiling = false
 	fmt.Println("DISABLED TILING")
 	// restore windows to there previous state (before tiling)
-	for _, window := range wm.currWorkspace.windowList {
+	for _, window := range wm.currMonitor.CurrWorkspace.windowList {
 		wm.configureWindow(window.id, window.X, window.Y, window.Width, window.Height)
 	}
 	wm.setNetWorkArea()
 }
 
 func (wm *WindowManager) enableTiling() {
-	wm.currWorkspace.tiling = true
+	wm.currMonitor.CurrWorkspace.tiling = true
 	// make sure no windows are fullscreened and that there state is saved (so it can be restored later if/when the user
 	// disables tiling)
-	for i, window := range wm.currWorkspace.windowList {
+	for i, window := range wm.currMonitor.CurrWorkspace.windowList {
 		fmt.Println(window.id)
 		attr, _ := xproto.GetGeometry(wm.conn, xproto.Drawable(window.id)).Reply()
-		wm.currWorkspace.windowList[i] = &Window{
+		wm.currMonitor.CurrWorkspace.windowList[i] = &Window{
 			id:         window.id,
 			X:          int(attr.X),
 			Y:          int(attr.Y),
@@ -1738,9 +1933,9 @@ func (wm *WindowManager) toggleFullScreen(child xproto.Window) {
 func (wm *WindowManager) disableFullscreen(win *Window, child xproto.Window) {
 	fmt.Println("DISABLING FULL SCREEN")
 	wm.windows[child].Fullscreen = false
-	for i, window := range wm.currWorkspace.windowList {
+	for i, window := range wm.currMonitor.CurrWorkspace.windowList {
 		if window.id == child {
-			wm.currWorkspace.windowList[i].Fullscreen = false
+			wm.currMonitor.CurrWorkspace.windowList[i].Fullscreen = false
 		}
 		fmt.Println(window.Fullscreen)
 	}
@@ -1761,16 +1956,58 @@ func (wm *WindowManager) disableFullscreen(win *Window, child xproto.Window) {
 	if err != nil {
 		slog.Error("couldn't un fullscreen window", "error: ", err)
 	}
+	wm.removeFullScreenEWMH(child)
 	wm.fitToLayout()
+}
+
+func (wm *WindowManager) setFullScreenEWMH(win xproto.Window) {
+	// Intern the atoms we need
+	netWmState := wm.atoms["_NET_WM_STATE"]
+	netWmStateFullscreen := wm.atoms["_NET_WM_STATE_FULLSCREEN"]
+
+	data := make([]byte, 4)
+	binary.LittleEndian.PutUint32(data, uint32(netWmStateFullscreen))
+	// Change the window property to include fullscreen
+	err := xproto.ChangePropertyChecked(
+		wm.conn,
+		xproto.PropModeReplace,
+		win,
+		netWmState,
+		xproto.AtomAtom,
+		32,
+		1,
+		data,
+	).Check()
+	if err != nil {
+		return
+	}
+}
+
+func (wm *WindowManager) removeFullScreenEWMH(win xproto.Window) {
+	netWmState := wm.atoms["_NET_WM_STATE"]
+	// Change the window property to remove fullscreen
+	err := xproto.ChangePropertyChecked(
+		wm.conn,
+		xproto.PropModeReplace,
+		win,
+		netWmState,
+		xproto.AtomAtom,
+		32,
+		0,
+		nil,
+	).Check()
+	if err != nil {
+		return
+	}
 }
 
 func (wm *WindowManager) fullscreen(_ *Window, child xproto.Window) {
 	// set window state so it can be restored later then configure window to be full width and height, sam with client,
 	// also take away border
 	wm.windows[child].Fullscreen = true
-	for i, window := range wm.currWorkspace.windowList {
+	for i, window := range wm.currMonitor.CurrWorkspace.windowList {
 		if window.id == child {
-			wm.currWorkspace.windowList[i].Fullscreen = true
+			wm.currMonitor.CurrWorkspace.windowList[i].Fullscreen = true
 		}
 	}
 	xproto.ConfigureWindow(
@@ -1790,18 +2027,19 @@ func (wm *WindowManager) fullscreen(_ *Window, child xproto.Window) {
 		child,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|
 			xproto.ConfigWindowWidth|xproto.ConfigWindowHeight|xproto.ConfigWindowBorderWidth,
-		[]uint32{0, 0, uint32(wm.width), uint32(wm.height), 0},
+		[]uint32{uint32(wm.currMonitor.X), uint32(wm.currMonitor.Y), uint32(wm.currMonitor.Width), uint32(wm.currMonitor.Height), 0},
 	).Check()
 	if err != nil {
 		slog.Error("couldn't fullscreen window", "error:", err)
 	}
+	wm.setFullScreenEWMH(child)
 }
 
 func (wm *WindowManager) broadcastWorkspaceCount() {
 	// EMWH things for bars to show workspaces
-	count := wm.workspaceIndex + 1
+	count := wm.currMonitor.workspaceIndex + 1
 	otherCount := 0
-	for i, workspace := range wm.workspaces {
+	for i, workspace := range wm.currMonitor.Workspaces {
 		if len(workspace.windowList) > 0 {
 			otherCount = i
 		}
@@ -1877,40 +2115,40 @@ func (wm *WindowManager) broadcastWorkspace(num int) {
 }
 
 func (wm *WindowManager) switchWorkspace(workspace int) {
-	if workspace > len(wm.workspaces) {
+	if workspace > len(wm.currMonitor.Workspaces) {
 		return
 	}
 
-	if workspace == wm.workspaceIndex {
+	if workspace == wm.currMonitor.workspaceIndex {
 		return
 	}
 
 	// unmap all windows in current workspace
-	for _, frame := range wm.currWorkspace.windowList {
+	for _, frame := range wm.currMonitor.CurrWorkspace.windowList {
 		xproto.UnmapWindowChecked(wm.conn, frame.id)
 	}
 
 	// swap workspace
-	wm.currWorkspace = &wm.workspaces[workspace]
-	wm.workspaceIndex = workspace
+	wm.currMonitor.CurrWorkspace = &wm.currMonitor.Workspaces[workspace]
+	wm.currMonitor.workspaceIndex = workspace
 
 	// map all the windows in the other workspace
-	for _, frame := range wm.currWorkspace.windowList {
+	for _, frame := range wm.currMonitor.CurrWorkspace.windowList {
 		xproto.MapWindowChecked(wm.conn, frame.id)
 	}
 
 	wm.conn.Sync()
 
 	// update tiling
-	if !wm.currWorkspace.detachTiling {
-		if wm.tiling && !wm.currWorkspace.tiling {
+	if !wm.currMonitor.CurrWorkspace.detachTiling {
+		if wm.currMonitor.tiling && !wm.currMonitor.CurrWorkspace.tiling {
 			wm.enableTiling()
-		} else if !wm.tiling && wm.currWorkspace.tiling {
+		} else if !wm.currMonitor.tiling && wm.currMonitor.CurrWorkspace.tiling {
 			wm.disableTiling()
 		}
 	}
 	wm.broadcastWorkspace(workspace)
-	wm.layoutIndex = wm.currWorkspace.layoutIndex
+	wm.currMonitor.layoutIndex = wm.currMonitor.CurrWorkspace.layoutIndex
 }
 
 func (wm *WindowManager) sendWmDelete(conn *xgb.Conn, window xproto.Window) error {
@@ -2035,14 +2273,14 @@ func (wm *WindowManager) setNetWorkArea() {
 
 	buf := new(bytes.Buffer)
 
-	spaceX, spaceY, spaceWidth, spaceHeight := wm.tilingspace.X, wm.tilingspace.Y, wm.tilingspace.Width, wm.tilingspace.Height //nolint: lll
+	spaceX, spaceY, spaceWidth, spaceHeight := wm.currMonitor.TilingSpace.X, wm.currMonitor.TilingSpace.Y, wm.currMonitor.TilingSpace.Width, wm.currMonitor.TilingSpace.Height //nolint: lll
 
-	for _, wksp := range wm.workspaces {
+	for _, wksp := range wm.currMonitor.Workspaces {
 		if !wksp.tiling {
 			_ = binary.Write(buf, binary.LittleEndian, uint32(0))
 			_ = binary.Write(buf, binary.LittleEndian, uint32(0))
-			_ = binary.Write(buf, binary.LittleEndian, uint32(wm.width))
-			_ = binary.Write(buf, binary.LittleEndian, uint32(wm.height))
+			_ = binary.Write(buf, binary.LittleEndian, uint32(wm.currMonitor.Width))
+			_ = binary.Write(buf, binary.LittleEndian, uint32(wm.currMonitor.Height))
 		} else {
 			_ = binary.Write(buf, binary.LittleEndian, uint32(spaceX))
 			_ = binary.Write(buf, binary.LittleEndian, uint32(spaceY))
@@ -2052,7 +2290,7 @@ func (wm *WindowManager) setNetWorkArea() {
 	}
 
 	// Number of 32-bit CARDINAL values: 4 values per workspace
-	numValues := uint32(4 * len(wm.workspaces))
+	numValues := uint32(4 * len(wm.currMonitor.Workspaces))
 
 	err = xproto.ChangePropertyChecked(
 		wm.conn,
@@ -2116,8 +2354,8 @@ func (wm *WindowManager) findWindow(window xproto.Window) (bool, int, xproto.Win
 	fmt.Println("FINDING WINDOW", window)
 	// look through all workspaces and windows to find a window (this is for if a window is deleted by a window from
 	// another workspace, we need to search for it)
-	for i, workspace := range wm.workspaces {
-		if i == wm.workspaceIndex {
+	for i, workspace := range wm.currMonitor.Workspaces {
+		if i == wm.currMonitor.workspaceIndex {
 			continue
 		}
 
@@ -2139,7 +2377,7 @@ func (wm *WindowManager) onUnmapNotify(event xproto.UnmapNotifyEvent) {
 	}
 
 	found := false
-	for _, win := range wm.currWorkspace.windowList {
+	for _, win := range wm.currMonitor.CurrWorkspace.windowList {
 		if win.id == event.Window {
 			found = true
 			break
@@ -2153,10 +2391,10 @@ func (wm *WindowManager) onUnmapNotify(event xproto.UnmapNotifyEvent) {
 			fmt.Println(event.Window)
 			return
 		}
-		wm.currWorkspace = &wm.workspaces[index]
+		wm.currMonitor.CurrWorkspace = &wm.currMonitor.Workspaces[index]
 		fmt.Println("IN WORKSPACE", index)
 		wm.unFrame(event.Window, false)
-		wm.currWorkspace = &wm.workspaces[wm.workspaceIndex]
+		wm.currMonitor.CurrWorkspace = &wm.currMonitor.Workspaces[wm.currMonitor.workspaceIndex]
 		return
 	}
 	wm.unFrame(event.Window, false)
@@ -2165,7 +2403,7 @@ func (wm *WindowManager) onUnmapNotify(event xproto.UnmapNotifyEvent) {
 
 func (wm *WindowManager) remDestroyedWin(window xproto.Window) {
 	found := false
-	for _, win := range wm.currWorkspace.windowList {
+	for _, win := range wm.currMonitor.CurrWorkspace.windowList {
 		if win.id == window {
 			found = true
 			break
@@ -2179,10 +2417,10 @@ func (wm *WindowManager) remDestroyedWin(window xproto.Window) {
 			fmt.Println(window)
 			return
 		}
-		wm.currWorkspace = &wm.workspaces[index]
-		fmt.Println("IN WORKSPACE", index, wm.currWorkspace.windowList)
+		wm.currMonitor.CurrWorkspace = &wm.currMonitor.Workspaces[index]
+		fmt.Println("IN WORKSPACE", index, wm.currMonitor.CurrWorkspace.windowList)
 		wm.unFrame(window, false)
-		wm.currWorkspace = &wm.workspaces[wm.workspaceIndex]
+		wm.currMonitor.CurrWorkspace = &wm.currMonitor.Workspaces[wm.currMonitor.workspaceIndex]
 		return
 	}
 
@@ -2200,7 +2438,7 @@ func (wm *WindowManager) unFrame(w xproto.Window, _ bool) {
 		slog.Error("couldn't unmap frame", "error:", err.Error())
 	}
 	// remove window and frame from current workspace record
-	remove(&wm.currWorkspace.windowList, w)
+	remove(&wm.currMonitor.CurrWorkspace.windowList, w)
 	delete(wm.windows, w)
 	wm.setNetClientList()
 
@@ -2406,11 +2644,11 @@ func (wm *WindowManager) onMapRequest(event xproto.MapRequestEvent) {
 
 	// frame the window and make sure to work out the new tiling layout
 	wm.frame(event.Window, false)
-	if wm.currWorkspace.tiling {
+	if wm.currMonitor.CurrWorkspace.tiling {
 		wm.fitToLayout()
 	}
 
-	wm.setWindowDesktop(event.Window, uint32(wm.workspaceIndex))
+	wm.setWindowDesktop(event.Window, uint32(wm.currMonitor.workspaceIndex))
 }
 
 func (wm *WindowManager) frame(w xproto.Window, createdBeforeWM bool) {
@@ -2459,10 +2697,10 @@ func (wm *WindowManager) frame(w xproto.Window, createdBeforeWM bool) {
 	// center it
 	windowMidX := math.Round(float64(geometry.Width) / 2)
 	windowMidY := math.Round(float64(geometry.Height) / 2)
-	screenMidX := math.Round(float64(wm.width) / 2)
-	screenMidY := math.Round(float64(wm.height) / 2)
-	topLeftX := screenMidX - windowMidX
-	topLeftY := screenMidY - windowMidY
+	screenMidX := math.Round(float64(wm.currMonitor.Width) / 2)
+	screenMidY := math.Round(float64(wm.currMonitor.Height) / 2)
+	topLeftX := float64(wm.currMonitor.X) + (screenMidX - windowMidX)
+	topLeftY := float64(wm.currMonitor.Y) + (screenMidY - windowMidY)
 
 	err = xproto.ConfigureWindowChecked(
 		wm.conn,
@@ -2531,7 +2769,7 @@ func (wm *WindowManager) frame(w xproto.Window, createdBeforeWM bool) {
 	}
 
 	// add all of this to the current workspace record
-	wm.currWorkspace.windowList = append(wm.currWorkspace.windowList, &Window{
+	wm.currMonitor.CurrWorkspace.windowList = append(wm.currMonitor.CurrWorkspace.windowList, &Window{
 		X:          int(topLeftX),
 		Y:          int(topLeftY),
 		Width:      int(geometry.Width),
@@ -2540,14 +2778,14 @@ func (wm *WindowManager) frame(w xproto.Window, createdBeforeWM bool) {
 		id:         w,
 		Client:     w,
 	})
-	wm.windows[w] = wm.currWorkspace.windowList[len(wm.currWorkspace.windowList)-1]
+	wm.windows[w] = wm.currMonitor.CurrWorkspace.windowList[len(wm.currMonitor.CurrWorkspace.windowList)-1]
 	wm.setNetClientList()
 	fmt.Println("Framed window" + strconv.Itoa(int(w)) + "[" + strconv.Itoa(int(w)) + "]")
 }
 
 func (wm *WindowManager) onConfigureRequest(event xproto.ConfigureRequestEvent) {
 	if _, ok := wm.windows[event.Window]; ok {
-		if wm.tiling {
+		if wm.currMonitor.tiling {
 			return
 		}
 	}

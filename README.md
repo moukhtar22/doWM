@@ -21,6 +21,7 @@
 - [Screenshots](#screenshots)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [Monitors](#monitors)
 - [Star History](#star-history)
 - [Progress](#progress)
 - [Bugs](#bugs)
@@ -72,7 +73,7 @@ chmod +x ~/.config/doWM/autostart.sh
 > To logout, I suggest you use `kill $(pgrep -o doWM)`
 
 ## Configuration
-doWM is configured with `~/.config/doWM/doWM.yml` and `~/.confiig/doWM/autostart.sh`
+doWM is configured with `~/.config/doWM/doWM.yml` and `~/.config/doWM/autostart.sh`
 simply put any autostart commands in autostart.sh, and then remember to chmod +x it.
 the main config file is very simple and is described clearly in the comments on /exampleConfig/doWM.yml
 
@@ -87,6 +88,19 @@ You have a few general options:
 - border-width (border width of windows)
 - unactive-border-color (the color for the border of unactive windows
 - active-border-color (the color for the border of an active window)
+
+The multi monitor system is fairly simple, you don't need to add it to your config but you can if you want to specify positions for your monitors. The only rule for the positions is they cannot be negative, this means that the monitor that is the highest has a Y of 0, where as ones lower than that could be somehting like 1080, same with X, the one on the furthest left would be 0, then to the right of that could be 1920. Here is an example of two monitors, one it above and to the right and the other below and to the left:
+```yml
+monitors:
+  # highest and to the right
+  - x: 960
+    y: 0
+
+  # furthest to the left and below
+  - x: 0
+    y: 1080
+```
+To move a window between monitors, just drag it between and it will follow
 
 Although there are some default tiling layouts which will serve you well, you can easily customize your tiling layouts. The system works quite simply, in the `layouts:` you would have a list of each of the window numbers you want to have a layout/s for, for example 1 through 5 so you would have layouts for up to 5 windows in a workspace, any more than that and the window would just be placed above the windows to be moved to a seperate workspace or closed. For each window number, you specify `- windows:` for each layout, in side of windows you would have a list of windows, represented like this:
 ```yml
@@ -171,6 +185,9 @@ for example:
 
 For an example config, look at [/exampleConfig](https://github.com/BobdaProgrammer/doWM/tree/main/exampleConfig)
 
+## Monitors
+doWM supports multiple monitors and you can see how to configure them in the configuration section. Each monitor has 10 workspaces and are independent of the other monitors unless you drag a window between them, it will then move it to the other monitor.
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=BobdaProgrammer/doWM&type=Timeline)](https://www.star-history.com/#BobdaProgrammer/doWM&Timeline)
@@ -191,7 +208,5 @@ For an example config, look at [/exampleConfig](https://github.com/BobdaProgramm
 - [x] fullscreen
 - [x] startup commands
 - [x] picom support
-- [ ] multi monitor support
-
-## bugs
- - dragging tabs in firefox and just drag and drop in general
+- [x] multi monitor support
+- [ ] auto update monitors if new one is plugged in
