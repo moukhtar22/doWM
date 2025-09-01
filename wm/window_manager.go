@@ -1,4 +1,4 @@
-// Package wm provides a X11 window manager.
+// Package wm provides an X11 window manager.
 package wm
 
 import (
@@ -51,7 +51,7 @@ type MonitorConfig struct {
 }
 
 // Keybind represents a keybind: keycode, the letter of the key, if shift should be pressed,
-// command (can be empty), role in wm (can be empty)k.
+// command (can be empty), role in wm (can be empty).
 type Keybind struct {
 	Keycode uint32
 	Key     string `yaml:"key"`
@@ -60,7 +60,7 @@ type Keybind struct {
 	Role    string `yaml:"role"`
 }
 
-// LayoutWindow represensts where a window is on a layout (dynamic by using percentages).
+// LayoutWindow represents where a window is on a layout (dynamic by using percentages).
 type LayoutWindow struct {
 	WidthPercentage  float64 `yaml:"width"`
 	HeightPercentage float64 `yaml:"height"`
@@ -68,7 +68,7 @@ type LayoutWindow struct {
 	YPercentage      float64 `yaml:"y"`
 }
 
-// Layout represensts a tiling layout of windows.
+// Layout represents a tiling layout of windows.
 type Layout struct {
 	Windows []LayoutWindow `yaml:"windows"`
 }
@@ -99,7 +99,7 @@ type Space struct {
 }
 
 // Workspace is a map from client windows to the frame, the reverse of that, window IDs to windows, and if that
-// workspace is tiling or not (incase it needs to update to sync with the main wm).
+// workspace is tiling or not (in case it needs to update to sync with the main wm).
 type Workspace struct {
 	tiling        bool
 	layoutIndex   int
@@ -110,8 +110,7 @@ type Workspace struct {
 }
 
 // Monitor is representing a monitor which effectively houses its own workspaces and windows etc. the monitor is
-// actually just a space in the root
-// window
+// actually just a space in the root window
 type Monitor struct {
 	X              int16
 	Y              int16
@@ -128,7 +127,7 @@ type Monitor struct {
 
 // WindowManager represents the connection, root window, width and height of screen, workspaces,
 // the current workspace index,the current workspace, atoms for EMWH, if the wm is tiling, the space for tiling
-// windows to be, the different tiling layouts, the wm condig, the mod key.
+// windows to be, the different tiling layouts, the wm config, the mod key.
 type WindowManager struct {
 	conn          *xgb.Conn
 	root          xproto.Window
@@ -179,7 +178,6 @@ func (wm *WindowManager) cursor() { //nolint:unused
 }
 
 // creates simple tiling layouts for 1-4 windows, any more is simply left on top to be moved
-
 func createLayouts() map[int][]Layout {
 	return map[int][]Layout{
 		1: {{
@@ -726,7 +724,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 	wm.broadcastWorkspace(0)
 	wm.broadcastWorkspaceCount()
 
-	// grab the server whilst we manage pre-exisiting windows
+	// grab the server whilst we manage pre-existing windows
 	err = xproto.GrabServerChecked(
 		wm.conn,
 	).Check()
