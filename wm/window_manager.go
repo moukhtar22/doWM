@@ -856,7 +856,7 @@ func (wm *WindowManager) Run() { //nolint:cyclop
 			continue
 		}
 		if event == nil {
-			continue
+			return
 		}
 
 		pointer, ptrerr := xproto.QueryPointer(wm.conn, wm.root).Reply()
